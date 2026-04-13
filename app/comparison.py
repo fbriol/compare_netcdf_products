@@ -134,13 +134,13 @@ class AttributeComparisonResult:
 
     Attributes:
         name: Attribute name.
-        ref_value: Reference value as string.
+        src_value: Source value as string.
         tgt_value: Target value as string.
 
     """
 
     name: str
-    ref_value: str
+    src_value: str
     tgt_value: str
 
 
@@ -229,7 +229,7 @@ def compare_attributes(
             tgt_str = ", ".join(tgt_att) if isinstance(tgt_att, set) else str(tgt_att)
             results.append(
                 AttributeComparisonResult(
-                    name=att, ref_value=ref_str, tgt_value=tgt_str
+                    name=att, src_value=ref_str, tgt_value=tgt_str
                 )
             )
     return results
@@ -298,7 +298,7 @@ def compare_variable(
             status="masked",
             shape_diff=shape_diff,
             dtype_diff=dtype_diff,
-            message="Reference values are all masked",
+            message="Source values are all masked",
         )
 
     if tgt_val.all() is numpy.ma.masked and ref_val.all() is numpy.ma.masked:
@@ -309,7 +309,7 @@ def compare_variable(
             status="masked",
             shape_diff=shape_diff,
             dtype_diff=dtype_diff,
-            message="Both Target and Reference values are all masked",
+            message="Both Target and Source values are all masked",
         )
 
     if numpy.array_equal(ref_val, tgt_val):

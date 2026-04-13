@@ -589,7 +589,7 @@ def _build_group_browser(state, group_path):
                 html.Tr(
                     [
                         html.Td(a.name, style={"padding": "6px 12px"}),
-                        html.Td(str(a.ref_value), style={"padding": "6px 12px"}),
+                        html.Td(str(a.src_value), style={"padding": "6px 12px"}),
                         html.Td(str(a.tgt_value), style={"padding": "6px 12px"}),
                     ]
                 )
@@ -607,7 +607,7 @@ def _build_group_browser(state, group_path):
                                     style={"padding": "8px 12px", "textAlign": "left"},
                                 ),
                                 html.Th(
-                                    "Reference Value",
+                                    "Source Value",
                                     style={"padding": "8px 12px", "textAlign": "left"},
                                 ),
                                 html.Th(
@@ -807,8 +807,7 @@ def _build_filtered_map(data_source, zoom_range):
 
     All points are shown in light grey for context.  Points within the
     zoomed index range are overlaid in colour.  The geographic viewport
-    zooms to the filtered points but is forced to a square aspect ratio
-    so the rendered map rectangle keeps a consistent size.
+    zooms to the filtered points with independent padding per axis.
     """
     d = data_source.source_data
     if "longitude" not in d:
@@ -885,10 +884,10 @@ def _build_filtered_map(data_source, zoom_range):
                 "cmax": cmax,
                 "showscale": False,
             },
-            name="Reference",
+            name="Source",
             hovertemplate=(
                 "lon: %{lon:.3f}<br>lat: %{lat:.3f}"
-                "<br>reference: %{marker.color:.4g}"
+                "<br>source: %{marker.color:.4g}"
                 "<extra></extra>"
             ),
         )
@@ -916,7 +915,7 @@ def _build_filtered_map(data_source, zoom_range):
         )
     )
 
-    # Compute viewport: zoom to filtered points, force square aspect
+    # Compute viewport: zoom to filtered points with independent padding
     view_lon = lon_f[~numpy.isnan(lon_f)] if len(lon_f) > 0 else all_lon
     view_lat = lat_f[~numpy.isnan(lat_f)] if len(lat_f) > 0 else all_lat
 
@@ -931,19 +930,29 @@ def _build_filtered_map(data_source, zoom_range):
         "lakecolor": "#d4ecf7",
         "showcountries": True,
         "countrycolor": "#aaa",
-        "projection_type": "equirectangular",
+        "projection_type": "natural earth",
     }
     if len(view_lon) > 0:
-        lon_mid = float((view_lon.min() + view_lon.max()) / 2)
-        lat_mid = float((view_lat.min() + view_lat.max()) / 2)
-        lon_span = float(view_lon.max() - view_lon.min())
-        lat_span = float(view_lat.max() - view_lat.min())
-        # Force square: take the largest span, enforce a minimum of 5°
-        half = max(lon_span, lat_span, 5.0) / 2 + 2.0
-        geo_kwargs["lonaxis_range"] = [lon_mid - half, lon_mid + half]
-        geo_kwargs["lataxis_range"] = [lat_mid - half, lat_mid + half]
-        geo_kwargs["projection_rotation_lon"] = lon_mid
-        geo_kwargs["projection_rotation_lat"] = lat_mid
+        lon_min = float(view_lon.min())
+        lon_max = float(view_lon.max())
+        lat_min = float(view_lat.min())
+        lat_max = float(view_lat.max())
+        # Independent minimum extent per axis (avoid squishing)
+        lon_span = lon_max - lon_min
+        lat_span = lat_max - lat_min
+        if lon_span < 3.0:
+            pad = (3.0 - lon_span) / 2
+            lon_min -= pad
+            lon_max += pad
+        if lat_span < 3.0:
+            pad = (3.0 - lat_span) / 2
+            lat_min -= pad
+            lat_max += pad
+        # 15% margin in each direction
+        lon_margin = max(1.0, (lon_max - lon_min) * 0.15)
+        lat_margin = max(1.0, (lat_max - lat_min) * 0.15)
+        geo_kwargs["lonaxis_range"] = [lon_min - lon_margin, lon_max + lon_margin]
+        geo_kwargs["lataxis_range"] = [lat_min - lat_margin, lat_max + lat_margin]
 
     fig.update_geos(**geo_kwargs)
     fig.update_layout(
@@ -1250,10 +1259,9 @@ def _build_detail_view(state, varpath, zoom_range=None):
                         "symbol": "diamond",
                         "line": {"width": 1, "color": "red"},
                     },
-                    name="Reference (outlier)",
+                    name="Source (outlier)",
                     hovertemplate=(
-                        "index: %{x}<br>reference: %{y}<br>"
-                        "<b>OUTLIER</b><extra></extra>"
+                        "index: %{x}<br>source: %{y}<br><b>OUTLIER</b><extra></extra>"
                     ),
                     visible=True,
                 )
@@ -1357,7 +1365,7 @@ def _build_detail_view(state, varpath, zoom_range=None):
                 html.Div(
                     "Outliers: points where |difference - mean| > N\u00d7\u03c3. "
                     "On the Signal Comparison plot, orange diamonds mark the "
-                    "Reference value and yellow diamonds the Target value "
+                    "Source value and yellow diamonds the Target value "
                     "at detected positions.",
                     style={
                         "fontSize": "11px",
@@ -1471,6 +1479,29 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         state: The shared session state.
 
     """
+
+    # ── Sidebar toggle ──────────────────────────────────────────────
+    app.clientside_callback(
+        """
+        function(n) {
+            var sb = document.getElementById('sidebar');
+            if (!sb) return window.dash_clientside.no_update;
+            if (sb.style.display === 'none') {
+                sb.style.display = '';
+                sb.style.marginLeft = '0';
+                sb.style.opacity = '1';
+            } else {
+                sb.style.display = 'none';
+            }
+            // Trigger a window resize so Plotly graphs resize
+            setTimeout(function() { window.dispatchEvent(new Event('resize')); }, 350);
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output("sidebar-toggle-btn", "id"),
+        Input("sidebar-toggle-btn", "n_clicks"),
+        prevent_initial_call=True,
+    )
 
     # ── Main content rendering ─────────────────────────────────────
 
@@ -1810,10 +1841,9 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                         "symbol": "diamond",
                         "line": {"width": 1, "color": "red"},
                     },
-                    name="Reference (outlier)",
+                    name="Source (outlier)",
                     hovertemplate=(
-                        "index: %{x}<br>reference: %{y}<br>"
-                        "<b>OUTLIER</b><extra></extra>"
+                        "index: %{x}<br>source: %{y}<br><b>OUTLIER</b><extra></extra>"
                     ),
                 )
             )
@@ -1925,84 +1955,112 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         prevent_initial_call=True,
     )
 
-    # ── Zoom sync: Signal Comparison → other index-based graphs ──
-    # Listen to ALL graphs' relayoutData, detect if Signal Comparison
-    # triggered, then apply its x-range to all other index-based graphs.
-    # The zoom-range store update is debounced (300ms) so the server-side
-    # map callback only fires once the user has finished zooming.
+    # ── Zoom sync: any index-based graph → all other index-based graphs ──
+    # Uses native Plotly plotly_relayout events for reliable sync,
+    # installed via MutationObserver. The Dash callback only updates
+    # the zoom-range dcc.Store for server-side use (geo map rebuild).
     app.clientside_callback(
         """
-        function(allRelayoutData, allIds) {
-            // Guard against re-entrance from our own Plotly.relayout calls
-            if (window._zoomSyncing) return window.dash_clientside.no_update;
+        function(n) {
+            // Install zoom-sync event listeners once
+            if (window._zoomSyncInstalled) return window.dash_clientside.no_update;
+            window._zoomSyncInstalled = true;
+            window._zoomSyncing = false;
+            window._lastZoomRange = null;
 
-            var ctx = window.dash_clientside.callback_context;
-            if (!ctx || !ctx.triggered || ctx.triggered.length === 0)
-                return window.dash_clientside.no_update;
-
-            // Find which graph triggered the callback
-            var triggeredProp = ctx.triggered[0].prop_id;
-            if (triggeredProp.indexOf('Signal Comparison') === -1)
-                return window.dash_clientside.no_update;
-
-            // Find the Signal Comparison index
-            var triggerIdx = -1;
-            for (var i = 0; i < allIds.length; i++) {
-                if (allIds[i].label === 'Signal Comparison') {
-                    triggerIdx = i;
-                    break;
-                }
-            }
-            if (triggerIdx === -1) return window.dash_clientside.no_update;
-
-            var rd = allRelayoutData[triggerIdx];
-            if (!rd) return window.dash_clientside.no_update;
-
-            // Extract the x-range
-            var xRange = null;
-            var autorange = false;
-            if (rd['xaxis.range[0]'] !== undefined) {
-                xRange = [rd['xaxis.range[0]'], rd['xaxis.range[1]']];
-            } else if (rd['xaxis.range'] !== undefined) {
-                xRange = rd['xaxis.range'];
-            } else if (rd['xaxis.autorange']) {
-                autorange = true;
-            } else {
-                return window.dash_clientside.no_update;
-            }
-
-            // Apply to every other Plotly graph with x-axis "Index" (instant)
-            window._zoomSyncing = true;
-            var graphs = document.querySelectorAll('.js-plotly-plot');
-            graphs.forEach(function(gd) {
-                if (!gd.layout || !gd.layout.xaxis) return;
-                var rs = gd.layout.xaxis.rangeslider;
-                if (rs && rs.visible) return;
+            function isIndexGraph(gd) {
+                if (!gd.layout || !gd.layout.xaxis) return false;
                 var t = gd.layout.xaxis.title;
                 var txt = (typeof t === 'string') ? t
                         : (t && t.text) ? t.text : '';
-                if (txt !== 'Index') return;
-                try {
-                    if (autorange) {
-                        Plotly.relayout(gd, {'xaxis.autorange': true});
-                    } else {
-                        Plotly.relayout(gd, {
-                            'xaxis.range': [xRange[0], xRange[1]]
-                        });
-                    }
-                } catch(e) {}
-            });
-            setTimeout(function() { window._zoomSyncing = false; }, 200);
-
-            if (autorange) {
-                return {auto: true};
+                return txt === 'Index';
             }
-            return {min: xRange[0], max: xRange[1]};
+
+            function attachListeners() {
+                var graphs = document.querySelectorAll('.js-plotly-plot');
+                graphs.forEach(function(gd) {
+                    if (gd._zoomSyncAttached) return;
+                    gd._zoomSyncAttached = true;
+                    gd.on('plotly_relayout', function(ed) {
+                        if (window._zoomSyncing) return;
+                        if (!ed) return;
+                        if (!isIndexGraph(gd)) return;
+
+                        var xRange = null;
+                        var autorange = false;
+                        if (ed['xaxis.range[0]'] !== undefined) {
+                            xRange = [ed['xaxis.range[0]'],
+                                      ed['xaxis.range[1]']];
+                        } else if (ed['xaxis.range'] !== undefined) {
+                            xRange = ed['xaxis.range'];
+                        } else if (ed['xaxis.autorange']) {
+                            autorange = true;
+                        } else {
+                            return;
+                        }
+
+                        window._zoomSyncing = true;
+                        document.querySelectorAll('.js-plotly-plot')
+                            .forEach(function(other) {
+                                if (other === gd) return;
+                                if (!isIndexGraph(other)) return;
+                                try {
+                                    if (autorange) {
+                                        Plotly.relayout(other,
+                                            {'xaxis.autorange': true});
+                                    } else {
+                                        Plotly.relayout(other, {
+                                            'xaxis.range[0]': xRange[0],
+                                            'xaxis.range[1]': xRange[1]
+                                        });
+                                    }
+                                } catch(e) {}
+                            });
+                        setTimeout(function() {
+                            window._zoomSyncing = false;
+                        }, 300);
+
+                        // Store for server-side access
+                        if (autorange) {
+                            window._lastZoomRange = {auto: true};
+                        } else {
+                            window._lastZoomRange = {
+                                min: xRange[0], max: xRange[1]};
+                        }
+                    });
+                });
+            }
+
+            // Attach now and on future DOM changes
+            setTimeout(attachListeners, 300);
+            var obs = new MutationObserver(function() {
+                setTimeout(attachListeners, 200);
+            });
+            obs.observe(document.body, {childList: true, subtree: true});
+
+            return window.dash_clientside.no_update;
         }
         """,
         Output("zoom-range", "data"),
+        Input("main-content", "children"),
+        prevent_initial_call=True,
+    )
+
+    # Update zoom-range store from relayoutData changes
+    app.clientside_callback(
+        """
+        function(allRelayoutData) {
+            // Return the stored zoom range from the native event handler
+            if (window._lastZoomRange) {
+                var r = window._lastZoomRange;
+                window._lastZoomRange = null;
+                return r;
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output("zoom-range", "data", allow_duplicate=True),
         Input({"type": "plot-graph", "label": ALL}, "relayoutData"),
-        State({"type": "plot-graph", "label": ALL}, "id"),
         prevent_initial_call=True,
     )
 
@@ -2367,10 +2425,9 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                         "symbol": "diamond",
                         "line": {"width": 1, "color": "red"},
                     },
-                    name="Reference (outlier)",
+                    name="Source (outlier)",
                     hovertemplate=(
-                        "index: %{x}<br>reference: %{y}<br>"
-                        "<b>OUTLIER</b><extra></extra>"
+                        "index: %{x}<br>source: %{y}<br><b>OUTLIER</b><extra></extra>"
                     ),
                 )
             )

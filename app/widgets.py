@@ -203,7 +203,7 @@ def build_attribute_table(
         [
             {
                 "Attribute": a.name,
-                "Reference Value": str(a.ref_value),
+                "Source Value": str(a.src_value),
                 "Target Value": str(a.tgt_value),
             }
             for a in attributes

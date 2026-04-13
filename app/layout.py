@@ -75,7 +75,7 @@ def build_file_info(state: SessionState) -> html.Div:
             html.Div(
                 [
                     html.Div(
-                        "Reference",
+                        "Source",
                         style={
                             "fontSize": "11px",
                             "color": "#1565c0",
@@ -416,6 +416,22 @@ def create_layout(state: SessionState) -> html.Div:
                 [
                     html.Div(
                         [
+                            html.Button(
+                                "\u2630",
+                                id="sidebar-toggle-btn",
+                                n_clicks=0,
+                                style={
+                                    "background": "none",
+                                    "border": "1px solid rgba(255,255,255,0.5)",
+                                    "borderRadius": "4px",
+                                    "color": "white",
+                                    "fontSize": "18px",
+                                    "cursor": "pointer",
+                                    "padding": "2px 8px",
+                                    "marginRight": "12px",
+                                    "lineHeight": "1",
+                                },
+                            ),
                             html.Span(
                                 state.ref_path.name,
                                 style={
@@ -441,7 +457,7 @@ def create_layout(state: SessionState) -> html.Div:
                                 },
                             ),
                         ],
-                        style={"display": "flex", "alignItems": "baseline"},
+                        style={"display": "flex", "alignItems": "center"},
                     ),
                     html.Div(
                         [
@@ -505,6 +521,7 @@ def create_layout(state: SessionState) -> html.Div:
                             html.Hr(style={"margin": "12px 0"}),
                             build_expression_panel(state),
                         ],
+                        id="sidebar",
                         style={
                             "width": "380px",
                             "minWidth": "380px",
@@ -513,6 +530,7 @@ def create_layout(state: SessionState) -> html.Div:
                             "borderRight": "1px solid #e0e0e0",
                             "overflowY": "auto",
                             "height": "calc(100vh - 52px)",
+                            "transition": "margin-left 0.3s ease, opacity 0.3s ease",
                         },
                     ),
                     # Main content area

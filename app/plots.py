@@ -33,8 +33,8 @@ def fig_signal_comparison(
             y=d["expected"],
             mode="markers",
             marker={"size": 2, "color": "blue"},
-            name="Reference",
-            hovertemplate="index: %{x}<br>reference: %{y}<extra></extra>",
+            name="Source",
+            hovertemplate="index: %{x}<br>source: %{y}<extra></extra>",
         )
     )
     fig.add_trace(
@@ -93,9 +93,10 @@ def fig_signal_difference(
     )
     fig.update_layout(
         xaxis_title="Index",
-        yaxis_title="Reference - Target",
+        yaxis_title="Source - Target",
         height=400,
         margin={"l": 60, "r": 20, "t": 10, "b": 40},
+        showlegend=False,
     )
     return fig
 
@@ -122,7 +123,7 @@ def fig_nan_distribution(
             y=d["nan_expected"],
             mode="markers",
             marker={"size": 3, "color": "blue", "symbol": "square"},
-            name="Only in Reference",
+            name="Only in Source",
             hovertemplate="index: %{x}<extra></extra>",
         )
     )
@@ -176,12 +177,12 @@ def fig_scatter(
             mode="markers",
             marker={"size": 2},
             name="",
-            hovertemplate="target: %{x}<br>reference: %{y}<extra></extra>",
+            hovertemplate="target: %{x}<br>source: %{y}<extra></extra>",
         )
     )
     fig.update_layout(
         xaxis_title="Target",
-        yaxis_title="Reference",
+        yaxis_title="Source",
         height=500,
         margin={"l": 60, "r": 20, "t": 10, "b": 40},
     )
@@ -335,10 +336,10 @@ def fig_geo_map(
                 "cmax": cmax,
                 "showscale": False,
             },
-            name="Reference",
+            name="Source",
             hovertemplate=(
                 "lon: %{lon:.3f}<br>lat: %{lat:.3f}"
-                "<br>reference: %{marker.color:.4g}<extra></extra>"
+                "<br>source: %{marker.color:.4g}<extra></extra>"
             ),
         )
     )
