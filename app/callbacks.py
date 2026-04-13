@@ -225,11 +225,16 @@ def _build_breadcrumb(group_path):
 
 
 def _get_clickable_varpaths(state):
-    """Build a flat list of all clickable (different/almost_equal) varpaths."""
+    """Build a flat list of variable paths for prev/next navigation.
+
+    Only variables with differences are included in the navigation
+    sequence.  Other variables can still be viewed by clicking in
+    the group browser.
+    """
     paths = []
     for gr in state.group_results:
         paths.extend(v.varpath for v in gr.variables
-                        if v.status in ("different", "almost_equal"))
+                     if v.status in ("different", "almost_equal"))
     return paths
 
 
@@ -512,10 +517,9 @@ def _build_group_browser(state, group_path):
             short_name = v.varpath.rsplit("/", 1)[-1]
             bg = STATUS_COLORS.get(v.status, "#ffffff")
             fg = STATUS_TEXT_COLORS.get(v.status, "#000000")
-            clickable = v.status in ("different", "almost_equal")
             row_style = {
                 "backgroundColor": bg, "color": fg,
-                "cursor": "pointer" if clickable else "default",
+                "cursor": "pointer",
             }
             cell_style = {"padding": "6px 12px", "fontSize": "12px"}
             var_rows.append(html.Tr([
@@ -1093,15 +1097,15 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update, no_update
-        triggered = ctx.triggered[0]
-        if triggered["value"] is None or triggered["value"] == 0:
+        best_val, best_id = 0, None
+        for t in ctx.triggered:
+            val = t.get("value") or 0
+            if val > best_val:
+                best_val = val
+                best_id = json.loads(t["prop_id"].rsplit(".", 1)[0])
+        if best_id is None or best_val == 0:
             return no_update, no_update, no_update
-        prop_id = triggered["prop_id"]
-        # Extract path from the pattern-matching ID
-        id_str = prop_id.rsplit(".", 1)[0]
-        id_dict = json.loads(id_str)
-        path = id_dict["path"]
-        return "group", path, None
+        return "group", best_id["path"], None
 
     # ── Navigation: breadcrumb ─────────────────────────────────────
 
@@ -1116,13 +1120,15 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update, no_update
-        triggered = ctx.triggered[0]
-        if triggered["value"] is None or triggered["value"] == 0:
+        best_val, best_id = 0, None
+        for t in ctx.triggered:
+            val = t.get("value") or 0
+            if val > best_val:
+                best_val = val
+                best_id = json.loads(t["prop_id"].rsplit(".", 1)[0])
+        if best_id is None or best_val == 0:
             return no_update, no_update, no_update
-        prop_id = triggered["prop_id"]
-        id_str = prop_id.rsplit(".", 1)[0]
-        id_dict = json.loads(id_str)
-        path = id_dict["path"]
+        path = best_id["path"]
         return "group", path, None
 
     # ── Navigation: variable row click ─────────────────────────────
@@ -1138,26 +1144,23 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update, no_update
-        triggered = ctx.triggered[0]
-        if triggered["value"] is None or triggered["value"] == 0:
+        # Find the actually clicked row (highest n_clicks among triggered)
+        best_val = 0
+        best_id = None
+        for t in ctx.triggered:
+            val = t.get("value") or 0
+            if val > best_val:
+                best_val = val
+                prop_id = t["prop_id"]
+                id_str = prop_id.rsplit(".", 1)[0]
+                best_id = json.loads(id_str)
+        if best_id is None or best_val == 0:
             return no_update, no_update, no_update
-        prop_id = triggered["prop_id"]
-        id_str = prop_id.rsplit(".", 1)[0]
-        id_dict = json.loads(id_str)
-        varpath = id_dict["path"]
+        varpath = best_id["path"]
 
-        # Check if this variable is clickable (different or almost_equal)
-        for gr in state.group_results:
-            for v in gr.variables:
-                if v.varpath == varpath:
-                    if v.status in ("different", "almost_equal"):
-                        parent = "/" + "/".join(
-                            varpath.strip("/").split("/")[:-1]
-                        ) if "/" in varpath.strip("/") else "/"
-                        return "detail", parent, varpath
-                    return no_update, no_update, no_update
-
-        return no_update, no_update, no_update
+        parent = ("/" + "/".join(varpath.strip("/").split("/")[:-1])
+                  if "/" in varpath.strip("/") else "/")
+        return "detail", parent, varpath
 
     # ── Navigation: back button ────────────────────────────────────
 
@@ -1269,13 +1272,15 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update, no_update
-        triggered = ctx.triggered[0]
-        if triggered["value"] is None or triggered["value"] == 0:
+        best_val, best_id = 0, None
+        for t in ctx.triggered:
+            val = t.get("value") or 0
+            if val > best_val:
+                best_val = val
+                best_id = json.loads(t["prop_id"].rsplit(".", 1)[0])
+        if best_id is None or best_val == 0:
             return no_update, no_update, no_update
-        prop_id = triggered["prop_id"]
-        id_str = prop_id.rsplit(".", 1)[0]
-        id_dict = json.loads(id_str)
-        vp = id_dict["path"]
+        vp = best_id["path"]
         parent = ("/" + "/".join(vp.strip("/").split("/")[:-1])
                   if "/" in vp.strip("/") else "/")
         return "detail", parent, vp
