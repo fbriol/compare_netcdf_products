@@ -13,16 +13,16 @@ This module builds the complete UI:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
 import fnmatch
 import io
 import logging
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import pandas as pd
 import panel as pn
 
 if TYPE_CHECKING:
-    from .state import SessionState
     import netCDF4
 
     from .comparison import (
@@ -31,6 +31,7 @@ if TYPE_CHECKING:
         VariableComparisonResult,
     )
     from .data_loading import DataSource
+    from .state import SessionState
 
 from .comparison import FilterInfo, scan_all_groups
 from .constants import LEGEND_DATA, STATUS_COLORS, STATUS_TEXT_COLORS
@@ -93,8 +94,7 @@ def _count_diffs(state: SessionState, group_path: str) -> tuple[int, int]:
     gr = _find_group_result(state, group_path)
     if gr is None:
         return 0, 0
-    n_diff = sum(1 for v in gr.variables
-                 if v.status in ("different", "almost_equal"))
+    n_diff = sum(1 for v in gr.variables if v.status in ("different", "almost_equal"))
     return n_diff, len(gr.variables)
 
 
@@ -108,8 +108,9 @@ def _count_diffs_recursive(
     group = _navigate_to_group(dataset, group_path)
     if group is not None:
         for grp_name in group.groups:
-            child_path = (f"{group_path}/{grp_name}"
-                          if group_path != "/" else f"/{grp_name}")
+            child_path = (
+                f"{group_path}/{grp_name}" if group_path != "/" else f"/{grp_name}"
+            )
             cd, ct = _count_diffs_recursive(state, dataset, child_path)
             n_diff += cd
             n_total += ct
@@ -147,19 +148,22 @@ def build_breadcrumb(
     items: list[pn.viewable.Viewable] = []
 
     root_btn = pn.widgets.Button(
-        name="\U0001f3e0", button_type="light", width=40,
-        stylesheets=[_NAV_BTN_CSS])
+        name="\U0001f3e0", button_type="light", width=40, stylesheets=[_NAV_BTN_CSS]
+    )
     root_btn.on_click(lambda e: on_navigate("/"))
     items.append(root_btn)
 
     accumulated = ""
     for i, part in enumerate(parts):
         accumulated += f"/{part}"
-        items.append(pn.pane.HTML(
-            "<span style='color:#90a4ae; margin:0 2px; "
-            "font-size:16px;'>\u203a</span>",
-            margin=(6, 0)))
-        is_last = (i == len(parts) - 1)
+        items.append(
+            pn.pane.HTML(
+                "<span style='color:#90a4ae; margin:0 2px; "
+                "font-size:16px;'>\u203a</span>",
+                margin=(6, 0),
+            )
+        )
+        is_last = i == len(parts) - 1
         btn = pn.widgets.Button(
             name=part,
             button_type="light" if not is_last else "default",
@@ -193,14 +197,18 @@ def build_attribute_table(
 ) -> pn.pane.Pane:
     """Build a table for attribute comparison."""
     if not attributes:
-        return pn.pane.HTML(
-            "<em style='color:#999;'>No differences in attributes</em>")
+        return pn.pane.HTML("<em style='color:#999;'>No differences in attributes</em>")
 
-    df = pd.DataFrame([{
-        "Attribute": a.name,
-        "Reference Value": str(a.ref_value),
-        "Target Value": str(a.tgt_value),
-    } for a in attributes])
+    df = pd.DataFrame(
+        [
+            {
+                "Attribute": a.name,
+                "Reference Value": str(a.ref_value),
+                "Target Value": str(a.tgt_value),
+            }
+            for a in attributes
+        ]
+    )
 
     return pn.widgets.Tabulator(
         df,
@@ -223,16 +231,18 @@ def build_variable_table(
         if v.stats is not None:
             value_info = f"{v.stats}, atol={v.atol}"
         short_name = v.varpath.rsplit("/", 1)[-1]
-        rows.append({
-            "Variable": short_name,
-            "Status": v.status.replace("_", " ").title(),
-            "Shape": "\u2260" if v.shape_diff else "\u2713",
-            "DType": "\u2260" if v.dtype_diff else "\u2713",
-            "Values": value_info,
-            "_status": v.status,
-            "_long_name": v.long_name,
-            "_varpath": v.varpath,
-        })
+        rows.append(
+            {
+                "Variable": short_name,
+                "Status": v.status.replace("_", " ").title(),
+                "Shape": "\u2260" if v.shape_diff else "\u2713",
+                "DType": "\u2260" if v.dtype_diff else "\u2713",
+                "Values": value_info,
+                "_status": v.status,
+                "_long_name": v.long_name,
+                "_varpath": v.varpath,
+            }
+        )
 
     df = pd.DataFrame(rows)
 
@@ -282,7 +292,7 @@ def build_variable_table(
             LOGGER.warning("Selection row %s out of range", row_idx)
 
     table.on_click(_on_cell_click)
-    table.param.watch(_on_selection, 'selection')
+    table.param.watch(_on_selection, "selection")
 
     return table
 
@@ -298,64 +308,76 @@ def build_group_browser(
     content = pn.Column(sizing_mode="stretch_width", margin=(0, 10))
 
     if gr is None:
-        content.append(pn.pane.Alert(
-            f"Group `{group_path}` not found in comparison results.",
-            alert_type="warning"))
+        content.append(
+            pn.pane.Alert(
+                f"Group `{group_path}` not found in comparison results.",
+                alert_type="warning",
+            )
+        )
         return content
 
     # Summary bar
-    n_diff = sum(1 for v in gr.variables
-                 if v.status in ("different", "almost_equal"))
+    n_diff = sum(1 for v in gr.variables if v.status in ("different", "almost_equal"))
     n_eq = sum(1 for v in gr.variables if v.status == "equal")
     n_aeq = sum(1 for v in gr.variables if v.status == "almost_equal")
     n_masked = sum(1 for v in gr.variables if v.status == "masked")
 
     summary_parts = []
     if n_eq:
-        summary_parts.append(
-            f"<span style='color:#2e7d32'>\u2713 {n_eq} equal</span>")
+        summary_parts.append(f"<span style='color:#2e7d32'>\u2713 {n_eq} equal</span>")
     if n_aeq:
         summary_parts.append(
-            f"<span style='color:#006400'>\u2248 {n_aeq} almost equal</span>")
+            f"<span style='color:#006400'>\u2248 {n_aeq} almost equal</span>"
+        )
     if n_diff:
         summary_parts.append(
-            f"<span style='color:#e65100'>\u2260 {n_diff} different</span>")
+            f"<span style='color:#e65100'>\u2260 {n_diff} different</span>"
+        )
     if n_masked:
         summary_parts.append(
-            f"<span style='color:#757575'>\u2014 {n_masked} masked</span>")
+            f"<span style='color:#757575'>\u2014 {n_masked} masked</span>"
+        )
 
     if summary_parts:
-        content.append(pn.pane.HTML(
-            f"<div style='font-size:13px; padding:8px 12px; "
-            f"background:#f5f7fa; border-radius:6px; margin-bottom:10px;'>"
-            f"<b>{len(gr.variables)}</b> variables: "
-            f"{' &nbsp;&bull;&nbsp; '.join(summary_parts)}"
-            f"</div>",
-            sizing_mode="stretch_width"))
+        content.append(
+            pn.pane.HTML(
+                f"<div style='font-size:13px; padding:8px 12px; "
+                f"background:#f5f7fa; border-radius:6px; margin-bottom:10px;'>"
+                f"<b>{len(gr.variables)}</b> variables: "
+                f"{' &nbsp;&bull;&nbsp; '.join(summary_parts)}"
+                f"</div>",
+                sizing_mode="stretch_width",
+            )
+        )
 
     # Filter info
     if gr.filter_description:
-        content.append(pn.pane.Alert(
-            f"\U0001f50d {gr.filter_description}", alert_type="info"))
+        content.append(
+            pn.pane.Alert(f"\U0001f50d {gr.filter_description}", alert_type="info")
+        )
 
     # Sub-groups as styled buttons
     ref_group = _navigate_to_group(state.ref_ds, group_path)
     if ref_group is not None and ref_group.groups:
-        content.append(pn.pane.HTML(
-            "<h4 style='color:#37474f; margin:16px 0 8px 0;'>"
-            "\U0001f4c2 Sub-groups</h4>"))
+        content.append(
+            pn.pane.HTML(
+                "<h4 style='color:#37474f; margin:16px 0 8px 0;'>"
+                "\U0001f4c2 Sub-groups</h4>"
+            )
+        )
         btn_row: list[pn.viewable.Viewable] = []
         for grp_name in sorted(ref_group.groups):
-            child_path = (f"{group_path}/{grp_name}"
-                          if group_path != "/" else f"/{grp_name}")
-            n_d, _n_t = _count_diffs_recursive(
-                state, state.ref_ds, child_path)
+            child_path = (
+                f"{group_path}/{grp_name}" if group_path != "/" else f"/{grp_name}"
+            )
+            n_d, _n_t = _count_diffs_recursive(state, state.ref_ds, child_path)
             label = f"\U0001f4c1 {grp_name}"
             if n_d > 0:
                 label += f" ({n_d} diffs)"
             btn_type = "warning" if n_d > 0 else "light"
             btn = pn.widgets.Button(
-                name=label, button_type=btn_type,
+                name=label,
+                button_type=btn_type,
                 margin=(4, 6),
                 stylesheets=[_NAV_BTN_CSS],
             )
@@ -369,22 +391,31 @@ def build_group_browser(
 
     # Attributes
     if gr.attributes:
-        content.append(pn.pane.HTML(
-            "<h4 style='color:#37474f; margin:16px 0 8px 0;'>"
-            "\U0001f4cb Attributes</h4>"))
+        content.append(
+            pn.pane.HTML(
+                "<h4 style='color:#37474f; margin:16px 0 8px 0;'>"
+                "\U0001f4cb Attributes</h4>"
+            )
+        )
         content.append(build_attribute_table(gr.attributes))
 
     # Variables
     if gr.variables:
-        content.append(pn.pane.HTML(
-            "<h4 style='color:#37474f; margin:16px 0 8px 0;'>"
-            "\U0001f4ca Variables</h4>"))
+        content.append(
+            pn.pane.HTML(
+                "<h4 style='color:#37474f; margin:16px 0 8px 0;'>"
+                "\U0001f4ca Variables</h4>"
+            )
+        )
         if n_diff > 0:
-            content.append(pn.pane.HTML(
-                "<div style='font-size:11px; color:#78909c; "
-                "margin-bottom:6px;'>"
-                "Click a coloured row to see detailed comparison plots"
-                "</div>"))
+            content.append(
+                pn.pane.HTML(
+                    "<div style='font-size:11px; color:#78909c; "
+                    "margin-bottom:6px;'>"
+                    "Click a coloured row to see detailed comparison plots"
+                    "</div>"
+                )
+            )
         content.append(build_variable_table(gr.variables, on_variable_click))
 
     return content
@@ -426,34 +457,37 @@ def build_detail_view(
     # Fix figure sizing: override stretch_both → stretch_width so that
     # the figure's own height attribute is respected.
     for fig in figures:
-        if hasattr(fig, 'sizing_mode'):
+        if hasattr(fig, "sizing_mode"):
             fig.sizing_mode = "stretch_width"
 
     # All plots displayed flat — the only layout that renders
     # Bokeh figures reliably in Panel (no intermediate containers).
     plot_items: list[pn.viewable.Viewable] = []
     for label, fig in plot_configs:
-        plot_items.append(pn.pane.HTML(
-            f"<h4 style='color:#455a64; margin:16px 0 4px 0; "
-            f"border-bottom:1px solid #e0e0e0; "
-            f"padding-bottom:4px;'>{label}</h4>"))
-        plot_items.append(pn.pane.Bokeh(
-            fig, sizing_mode="stretch_width",
-            margin=(0, 0, 20, 0)))
+        plot_items.append(
+            pn.pane.HTML(
+                f"<h4 style='color:#455a64; margin:16px 0 4px 0; "
+                f"border-bottom:1px solid #e0e0e0; "
+                f"padding-bottom:4px;'>{label}</h4>"
+            )
+        )
+        plot_items.append(
+            pn.pane.Bokeh(fig, sizing_mode="stretch_width", margin=(0, 0, 20, 0))
+        )
 
     # Marker size slider
     marker_slider = pn.widgets.IntSlider(
-        name="Marker Size", start=1, end=10, value=2, step=1, width=200)
+        name="Marker Size", start=1, end=10, value=2, step=1, width=200
+    )
 
     def _on_marker(event) -> None:
         for fig in figures:
-            if hasattr(fig, 'renderers'):
+            if hasattr(fig, "renderers"):
                 for renderer in fig.renderers:
-                    if hasattr(renderer, 'glyph') and hasattr(
-                            renderer.glyph, 'size'):
+                    if hasattr(renderer, "glyph") and hasattr(renderer.glyph, "size"):
                         renderer.glyph.size = event.new
 
-    marker_slider.param.watch(_on_marker, 'value')
+    marker_slider.param.watch(_on_marker, "value")
 
     # Flag filter
     flag_widget = None
@@ -479,9 +513,9 @@ def build_detail_view(
     # Controls
     controls = pn.Row(
         pn.pane.HTML(
-            "<span style='font-size:12px; color:#607d8b;'>"
-            "<b>Marker size:</b></span>",
-            margin=(8, 8, 0, 0)),
+            "<span style='font-size:12px; color:#607d8b;'><b>Marker size:</b></span>",
+            margin=(8, 8, 0, 0),
+        ),
         marker_slider,
         sizing_mode="stretch_width",
         stylesheets=[_CARD_CSS],
@@ -528,9 +562,9 @@ def build_flag_filter(data_source: DataSource) -> pn.Column:
             multi_choice.value = list(all_options)
             return
         filtered = [
-            opt for opt in all_options
-            if fnmatch.fnmatch(opt.lower(), f"*{pattern}*")
-            or pattern in opt.lower()
+            opt
+            for opt in all_options
+            if fnmatch.fnmatch(opt.lower(), f"*{pattern}*") or pattern in opt.lower()
         ]
         multi_choice.options = filtered
         multi_choice.value = filtered
@@ -540,16 +574,17 @@ def build_flag_filter(data_source: DataSource) -> pn.Column:
         if not selected:
             return
         indices = data_source.flags[0].compute_filtered_indices(
-            selected, data_source.flags)
+            selected, data_source.flags
+        )
         data_source.apply_flag_filter(indices)
 
-    filter_input.param.watch(_on_filter, 'value')
-    multi_choice.param.watch(_on_flag_change, 'value')
+    filter_input.param.watch(_on_filter, "value")
+    multi_choice.param.watch(_on_flag_change, "value")
 
     return pn.Column(
-        pn.pane.HTML(
-            "<b style='color:#37474f;'>\U0001f3f3 Flag Filters</b>"),
-        filter_input, multi_choice,
+        pn.pane.HTML("<b style='color:#37474f;'>\U0001f3f3 Flag Filters</b>"),
+        filter_input,
+        multi_choice,
         sizing_mode="stretch_width",
         stylesheets=[_CARD_CSS],
     )
@@ -579,9 +614,7 @@ def build_expression_panel(
 
     expr_area = pn.widgets.TextAreaInput(
         name="Expression",
-        placeholder=(
-            "Example: ${/data_20/distance_to_coast} > 30000"
-        ),
+        placeholder=("Example: ${/data_20/distance_to_coast} > 30000"),
         sizing_mode="stretch_width",
         height=80,
         value=state.active_expression or "",
@@ -606,15 +639,15 @@ def build_expression_panel(
 
     # Example expressions as clickable buttons
     examples = [
-        ("distance > 30km",
-         "${/data_20/distance_to_coast} > 30000"),
-        ("flag == 0",
-         "${/data_01/surface_classification_flag} == 0"),
+        ("distance > 30km", "${/data_20/distance_to_coast} > 30000"),
+        ("flag == 0", "${/data_01/surface_classification_flag} == 0"),
     ]
     example_btns: list[pn.viewable.Viewable] = []
     for ex_label, ex_expr in examples:
         btn = pn.widgets.Button(
-            name=ex_label, button_type="light", width=140,
+            name=ex_label,
+            button_type="light",
+            width=140,
             stylesheets=[
                 ":host .bk-btn { font-size:10px; padding:2px 6px; "
                 "border:1px solid #cfd8dc; border-radius:12px; }"
@@ -631,8 +664,7 @@ def build_expression_panel(
         picked = event.new
         if picked:
             current = expr_area.value
-            if current and not current.endswith(
-                    (" ", "(", "&", "|", "\n")):
+            if current and not current.endswith((" ", "(", "&", "|", "\n")):
                 current += " "
             expr_area.value = current + picked
             var_select.value = ""
@@ -663,11 +695,12 @@ def build_expression_panel(
         )
         status_pane.object = (
             f"Filter active: {masked:,}/{total:,} points masked "
-            f"({100 * masked / total:.1f}%)")
+            f"({100 * masked / total:.1f}%)"
+        )
         status_pane.alert_type = "success"
         state.group_results = scan_all_groups(
-            state.ref_ds, state.tgt_ds, state.filter_info,
-            mask=state.active_mask)
+            state.ref_ds, state.tgt_ds, state.filter_info, mask=state.active_mask
+        )
         refresh_callback()
 
     def _clear(event) -> None:
@@ -681,12 +714,10 @@ def build_expression_panel(
         state.group_results = scan_all_groups(state.ref_ds, state.tgt_ds)
         refresh_callback()
 
-    var_select.param.watch(_on_var_select, 'value')
+    var_select.param.watch(_on_var_select, "value")
 
-    apply_btn = pn.widgets.Button(
-        name="\u2713 Apply", button_type="primary", width=110)
-    clear_btn = pn.widgets.Button(
-        name="\u2715 Clear", button_type="warning", width=110)
+    apply_btn = pn.widgets.Button(name="\u2713 Apply", button_type="primary", width=110)
+    clear_btn = pn.widgets.Button(name="\u2715 Clear", button_type="warning", width=110)
     apply_btn.on_click(_apply)
     clear_btn.on_click(_clear)
 
@@ -694,11 +725,13 @@ def build_expression_panel(
         pn.pane.HTML(
             "<div style='color:#37474f; font-weight:600; font-size:13px; "
             "letter-spacing:0.5px; text-transform:uppercase;'>"
-            "\U0001f50d Expression Filter</div>"),
+            "\U0001f50d Expression Filter</div>"
+        ),
         syntax_help,
         pn.pane.HTML(
             "<div style='font-size:11px; color:#78909c; "
-            "margin:4px 0 2px 0;'><b>Examples:</b></div>"),
+            "margin:4px 0 2px 0;'><b>Examples:</b></div>"
+        ),
         pn.Row(*example_btns),
         var_select,
         expr_area,
@@ -726,7 +759,8 @@ def build_legend() -> pn.pane.Pane:
             f"border:1px solid #ccc; margin-right:8px; flex-shrink:0;'>"
             f"</span>"
             f"<span style='font-size:11px; color:#333;'>"
-            f"{description}</span></div>")
+            f"{description}</span></div>"
+        )
 
     html = (
         f"<div style='padding:8px 0;'>"
@@ -754,7 +788,8 @@ def build_export_button(
             buf = io.BytesIO()
             placeholder = pn.pane.Markdown(
                 "# No variable selected\n\n"
-                "Select a variable with differences to export.")
+                "Select a variable with differences to export."
+            )
             placeholder.save(buf)
             buf.seek(0)
             return buf
@@ -768,8 +803,7 @@ def build_export_button(
                 resources="cdn",
             )
         except Exception:
-            LOGGER.exception("Export with resources=cdn failed, "
-                             "trying inline")
+            LOGGER.exception("Export with resources=cdn failed, trying inline")
             buf = io.BytesIO()
             detail.save(buf)
         buf.seek(0)

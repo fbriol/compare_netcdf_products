@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
 import dataclasses
 import logging
+from typing import TYPE_CHECKING, Literal
 
 import numpy
 
@@ -33,20 +33,23 @@ class FilterInfo:
 
     def get_filter_description(self, group_path: str) -> str:
         """Get a description of the filter for a specific group."""
-        normalized_path = group_path.lstrip('/')
+        normalized_path = group_path.lstrip("/")
 
         is_affected = False
         for affected_group in self.affected_groups:
-            if (normalized_path == affected_group
-                    or normalized_path.startswith(affected_group + '/')):
+            if normalized_path == affected_group or normalized_path.startswith(
+                affected_group + "/"
+            ):
                 is_affected = True
                 break
 
         if is_affected:
             masked_points = self.total_points - self.selected_points
-            return (f"Filter applied: {self.expression} | "
-                    f"Points masked: {masked_points:,}/{self.total_points:,} "
-                    f"({100 * masked_points / self.total_points:.1f}%)")
+            return (
+                f"Filter applied: {self.expression} | "
+                f"Points masked: {masked_points:,}/{self.total_points:,} "
+                f"({100 * masked_points / self.total_points:.1f}%)"
+            )
         return ""
 
 
@@ -83,16 +86,18 @@ class Stats:
         def format_float(x: numpy.float64) -> str:
             rounded = numpy.round(x, 12)
             result = f"{rounded:.6f}"
-            if '.' in result:
-                result = result.rstrip('0')
-                if result.endswith('.'):
+            if "." in result:
+                result = result.rstrip("0")
+                if result.endswith("."):
                     result = result[:-1]
             return result
 
-        return (f"min={format_float(self.min_diff)}, "
-                f"max={format_float(self.max_diff)}, "
-                f"mean={format_float(self.mean_diff)}, "
-                f"std={format_float(self.std_diff)}")
+        return (
+            f"min={format_float(self.min_diff)}, "
+            f"max={format_float(self.max_diff)}, "
+            f"mean={format_float(self.mean_diff)}, "
+            f"std={format_float(self.std_diff)}"
+        )
 
 
 @dataclasses.dataclass
@@ -157,8 +162,9 @@ class GroupComparisonResult:
     filter_description: str = ""
 
 
-def get_scale_factor(ref_var: netCDF4.Variable, tgt_var: netCDF4.Variable,
-                     varname: str) -> float:
+def get_scale_factor(
+    ref_var: netCDF4.Variable, tgt_var: netCDF4.Variable, varname: str
+) -> float:
     """Return the scale factor of the variables, or 0.0 if not present.
 
     Raise an error if the scale_factor attributes are different.
@@ -175,19 +181,22 @@ def get_scale_factor(ref_var: netCDF4.Variable, tgt_var: netCDF4.Variable,
 
     def check_variable(v: netCDF4.Variable) -> bool:
         val = v[:]
-        if "scale_factor" in v.ncattrs() and numpy.issubdtype(
-                val.dtype, numpy.floating):
-            return True
-        return False
+        return "scale_factor" in v.ncattrs() and numpy.issubdtype(
+            val.dtype, numpy.floating
+        )
 
-    default_tol = 0.
-    tol_ref = ref_var.getncattr("scale_factor") if check_variable(
-        ref_var) else default_tol
-    tol_tgt = tgt_var.getncattr("scale_factor") if check_variable(
-        tgt_var) else default_tol
+    default_tol = 0.0
+    tol_ref = (
+        ref_var.getncattr("scale_factor") if check_variable(ref_var) else default_tol
+    )
+    tol_tgt = (
+        tgt_var.getncattr("scale_factor") if check_variable(tgt_var) else default_tol
+    )
     if tol_ref != tol_tgt:
-        raise ValueError(f"Different scale_factor attributes for variable "
-                         f"{varname}: reference={tol_ref}, target={tol_tgt}.")
+        raise ValueError(
+            f"Different scale_factor attributes for variable "
+            f"{varname}: reference={tol_ref}, target={tol_tgt}."
+        )
     return tol_ref
 
 
@@ -208,8 +217,7 @@ def compare_attributes(
     results: list[AttributeComparisonResult] = []
     for att in reference.ncattrs():
         ref_att = reference.getncattr(att)
-        tgt_att = target.getncattr(
-            att) if att in target.ncattrs() else "missing"
+        tgt_att = target.getncattr(att) if att in target.ncattrs() else "missing"
 
         if isinstance(ref_att, str) and "," in ref_att:
             ref_att = {item.strip() for item in ref_att.split(",")}
@@ -217,19 +225,17 @@ def compare_attributes(
                 tgt_att = {item.strip() for item in tgt_att.split(",")}
 
         if ref_att != tgt_att:
-            ref_str = ", ".join(ref_att) if isinstance(ref_att,
-                                                       set) else str(ref_att)
-            tgt_str = ", ".join(tgt_att) if isinstance(tgt_att,
-                                                       set) else str(tgt_att)
+            ref_str = ", ".join(ref_att) if isinstance(ref_att, set) else str(ref_att)
+            tgt_str = ", ".join(tgt_att) if isinstance(tgt_att, set) else str(tgt_att)
             results.append(
-                AttributeComparisonResult(name=att,
-                                          ref_value=ref_str,
-                                          tgt_value=tgt_str))
+                AttributeComparisonResult(
+                    name=att, ref_value=ref_str, tgt_value=tgt_str
+                )
+            )
     return results
 
 
-def _apply_mask(data: numpy.ndarray,
-                mask: numpy.ndarray) -> numpy.ma.MaskedArray:
+def _apply_mask(data: numpy.ndarray, mask: numpy.ndarray) -> numpy.ma.MaskedArray:
     """Apply a boolean mask to data, masking points where mask is False."""
     if isinstance(data, numpy.ma.MaskedArray):
         new_mask = numpy.logical_or(data.mask, ~mask)
@@ -369,11 +375,14 @@ def compare_group(
         if prefix != "/":
             prefix += "/"
         varpath = prefix + varname
-        long_name = " ".join(item.capitalize() for item in getattr(
-            varobj,
-            "long_name",
-            varname,
-        ).split())
+        long_name = " ".join(
+            item.capitalize()
+            for item in getattr(
+                varobj,
+                "long_name",
+                varname,
+            ).split()
+        )
 
         if varname not in target.variables:
             variables.append(
@@ -383,7 +392,8 @@ def compare_group(
                     long_name=long_name,
                     status="missing",
                     message="Missing in target",
-                ))
+                )
+            )
             continue
 
         result = compare_variable(

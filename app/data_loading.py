@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
 import logging
+from typing import TYPE_CHECKING, Any
 
 import numpy
 
 if TYPE_CHECKING:
+    import netCDF4
+
     from .flags import Flag
     from .state import SessionState
 
@@ -32,8 +34,9 @@ def _promote_integer_to_float(data: numpy.ndarray) -> numpy.ndarray:
     return data.astype(numpy.float64)
 
 
-def lttb_downsample(x: numpy.ndarray, y: numpy.ndarray,
-                    n_out: int) -> tuple[numpy.ndarray, numpy.ndarray]:
+def lttb_downsample(
+    x: numpy.ndarray, y: numpy.ndarray, n_out: int
+) -> tuple[numpy.ndarray, numpy.ndarray]:
     """Downsample using Largest-Triangle-Three-Bucket algorithm.
 
     Vectorised per-bucket selection for speed.
@@ -75,8 +78,7 @@ def lttb_downsample(x: numpy.ndarray, y: numpy.ndarray,
         bx = x[bucket_start:bucket_end]
         by = y_safe[bucket_start:bucket_end]
         areas = numpy.abs(
-            (x[a] - avg_x) * (by - y_safe[a])
-            - (x[a] - bx) * (avg_y - y_safe[a])
+            (x[a] - avg_x) * (by - y_safe[a]) - (x[a] - bx) * (avg_y - y_safe[a])
         )
         best = int(numpy.argmax(areas)) + bucket_start
         sampled_indices[i] = best
@@ -111,27 +113,30 @@ class DataSource:
         self.full_computed = computed
         self.full_difference = computed - expected
 
-        is_floating = issubclass(expected.dtype.type,
-                                 numpy.floating) or issubclass(
-                                     computed.dtype.type, numpy.floating)
+        is_floating = issubclass(expected.dtype.type, numpy.floating) or issubclass(
+            computed.dtype.type, numpy.floating
+        )
 
         if not is_floating:
             nan_expected = numpy.ma.getmaskarray(expected)
             nan_computed = numpy.ma.getmaskarray(computed)
             self.full_expected = numpy.ma.filled(
-                _promote_integer_to_float(expected), fill_value=numpy.nan)
+                _promote_integer_to_float(expected), fill_value=numpy.nan
+            )
             self.full_computed = numpy.ma.filled(
-                _promote_integer_to_float(computed), fill_value=numpy.nan)
+                _promote_integer_to_float(computed), fill_value=numpy.nan
+            )
             self.full_difference = numpy.ma.filled(
-                _promote_integer_to_float(self.full_difference),
-                fill_value=numpy.nan)
+                _promote_integer_to_float(self.full_difference), fill_value=numpy.nan
+            )
         else:
             self.full_expected = numpy.ma.filled(expected, fill_value=numpy.nan)
             self.full_computed = numpy.ma.filled(computed, fill_value=numpy.nan)
             nan_expected = numpy.isnan(self.full_expected)
             nan_computed = numpy.isnan(self.full_computed)
-            self.full_difference = numpy.ma.filled(self.full_difference,
-                                                   fill_value=numpy.nan)
+            self.full_difference = numpy.ma.filled(
+                self.full_difference, fill_value=numpy.nan
+            )
 
         exclusive_nan = nan_computed ^ nan_expected
         self.exclusive_nan = bool(numpy.any(exclusive_nan))
@@ -139,9 +144,11 @@ class DataSource:
         # Store NaN distribution data
         if self.exclusive_nan:
             self.full_nan_computed = numpy.where(
-                exclusive_nan & nan_computed, 0, numpy.nan)
+                exclusive_nan & nan_computed, 0, numpy.nan
+            )
             self.full_nan_expected = numpy.where(
-                exclusive_nan & nan_expected, 0, numpy.nan)
+                exclusive_nan & nan_expected, 0, numpy.nan
+            )
         else:
             self.full_nan_computed = None
             self.full_nan_expected = None
@@ -170,10 +177,14 @@ class DataSource:
             expected = self.full_expected[indices]
             computed = self.full_computed[indices]
             difference = self.full_difference[indices]
-            lon = (self.full_longitude[indices]
-                   if self.full_longitude is not None else None)
-            lat = (self.full_latitude[indices]
-                   if self.full_latitude is not None else None)
+            lon = (
+                self.full_longitude[indices]
+                if self.full_longitude is not None
+                else None
+            )
+            lat = (
+                self.full_latitude[indices] if self.full_latitude is not None else None
+            )
         else:
             x = self.full_x
             expected = self.full_expected
@@ -185,12 +196,10 @@ class DataSource:
         # Downsample for display if needed
         n = len(x)
         if n > MAX_DISPLAY_POINTS:
-            LOGGER.info("Downsampling from %d to %d points", n,
-                        MAX_DISPLAY_POINTS)
+            LOGGER.info("Downsampling from %d to %d points", n, MAX_DISPLAY_POINTS)
             ds_x, ds_expected = lttb_downsample(x, expected, MAX_DISPLAY_POINTS)
             _, ds_computed = lttb_downsample(x, computed, MAX_DISPLAY_POINTS)
-            _, ds_difference = lttb_downsample(x, difference,
-                                               MAX_DISPLAY_POINTS)
+            _, ds_difference = lttb_downsample(x, difference, MAX_DISPLAY_POINTS)
             display_x = ds_x
             display_expected = ds_expected
             display_computed = ds_computed
@@ -240,12 +249,12 @@ class DataSource:
         if len(diff_for_hist) > 0:
             histogram, edges = numpy.histogram(diff_for_hist, bins="sturges")
             self.histogram_data: dict[str, Any] = {
-                'top': histogram,
-                'left': edges[:-1],
-                'right': edges[1:],
+                "top": histogram,
+                "left": edges[:-1],
+                "right": edges[1:],
             }
         else:
-            self.histogram_data = {'top': [], 'left': [], 'right': []}
+            self.histogram_data = {"top": [], "left": [], "right": []}
 
         # Build statistics from full (non-downsampled) data
         non_nan_diff = difference[~numpy.isnan(difference)]
@@ -273,9 +282,12 @@ class DataSource:
         else:
             self.stats_data = {
                 "metric": [
-                    "Samples", "Minimum Absolute Error",
-                    "Maximum Absolute Error", "Mean Absolute Error",
-                    "Mean Squared Error", "Root Mean Squared Error"
+                    "Samples",
+                    "Minimum Absolute Error",
+                    "Maximum Absolute Error",
+                    "Mean Absolute Error",
+                    "Mean Squared Error",
+                    "Root Mean Squared Error",
                 ],
                 "value": [0, 0, 0, 0, 0, 0],
             }
@@ -319,18 +331,21 @@ def _find_coordinates(
             lat = numpy.ma.filled(lat_var[:], fill_value=numpy.nan)
             # Only keep if the size is compatible with the data
             if lon.size != data_size:
-                LOGGER.info("_find_coordinates: size mismatch "
-                            "lon=%d data=%d, skipping", lon.size, data_size)
+                LOGGER.info(
+                    "_find_coordinates: size mismatch lon=%d data=%d, skipping",
+                    lon.size,
+                    data_size,
+                )
                 return None, None
             if active_mask is not None and lon.shape == active_mask.shape:
                 lon = numpy.where(active_mask, lon, numpy.nan)
                 lat = numpy.where(active_mask, lat, numpy.nan)
-            LOGGER.info("_find_coordinates: loaded lon=%s lat=%s",
-                        lon_path, lat_path)
+            LOGGER.info("_find_coordinates: loaded lon=%s lat=%s", lon_path, lat_path)
             return lon, lat
         except Exception as exc:
-            LOGGER.warning("_find_coordinates: failed to load %s / %s: %s",
-                           lon_path, lat_path, exc)
+            LOGGER.warning(
+                "_find_coordinates: failed to load %s / %s: %s", lon_path, lat_path, exc
+            )
             return None, None
 
     # --- 1. Explicit ``coordinates`` attribute -------------------------
@@ -419,35 +434,43 @@ def load_variable_data(
     # Apply expression mask if active (skip if sizes don't match)
     if state.active_mask is not None:
         if ref_val.shape == state.active_mask.shape:
-            LOGGER.info("load_variable_data: applying mask (sum=%d/%d)",
-                        int(state.active_mask.sum()),
-                        int(state.active_mask.size))
+            LOGGER.info(
+                "load_variable_data: applying mask (sum=%d/%d)",
+                int(state.active_mask.sum()),
+                int(state.active_mask.size),
+            )
             ref_val = _apply_mask(ref_val, state.active_mask)
             tgt_val = _apply_mask(tgt_val, state.active_mask)
-            LOGGER.info("load_variable_data: after mask, valid points=%d",
-                        int((~numpy.ma.getmaskarray(ref_val)).sum()))
+            LOGGER.info(
+                "load_variable_data: after mask, valid points=%d",
+                int((~numpy.ma.getmaskarray(ref_val)).sum()),
+            )
         else:
-            LOGGER.info("load_variable_data: mask size %d != data size %d, "
-                        "skipping mask for %s",
-                        state.active_mask.size, ref_val.size, varpath)
+            LOGGER.info(
+                "load_variable_data: mask size %d != data size %d, "
+                "skipping mask for %s",
+                state.active_mask.size,
+                ref_val.size,
+                varpath,
+            )
     else:
         LOGGER.info("load_variable_data: NO active mask")
 
     # Get relevant flags for this variable's group
     relevant_flags = None
     if state.flags:
-        relevant_flags = [
-            f for f in state.flags if f.is_in_current_group(varpath)
-        ]
+        relevant_flags = [f for f in state.flags if f.is_in_current_group(varpath)]
         if not relevant_flags:
             relevant_flags = None
 
     # Extract lon/lat coordinates
     longitude, latitude = _find_coordinates(
-        state.ref_ds, varpath, ref_val.shape, state.active_mask)
+        state.ref_ds, varpath, ref_val.shape, state.active_mask
+    )
 
-    ds = DataSource(ref_val, tgt_val, relevant_flags,
-                    longitude=longitude, latitude=latitude)
+    ds = DataSource(
+        ref_val, tgt_val, relevant_flags, longitude=longitude, latitude=latitude
+    )
 
     # Cache with eviction
     if len(state.variable_cache) >= state.max_cache_size:
@@ -458,8 +481,7 @@ def load_variable_data(
     return ds
 
 
-def _navigate_to_variable(dataset: netCDF4.Dataset,
-                          varpath: str) -> netCDF4.Variable:
+def _navigate_to_variable(dataset: netCDF4.Dataset, varpath: str) -> netCDF4.Variable:
     """Navigate to a variable in a NetCDF dataset by its full path.
 
     Args:
@@ -477,8 +499,7 @@ def _navigate_to_variable(dataset: netCDF4.Dataset,
     return group.variables[parts[-1]]
 
 
-def _apply_mask(data: numpy.ndarray,
-                mask: numpy.ndarray) -> numpy.ma.MaskedArray:
+def _apply_mask(data: numpy.ndarray, mask: numpy.ndarray) -> numpy.ma.MaskedArray:
     """Apply a boolean mask to data, masking points where mask is False.
 
     Args:

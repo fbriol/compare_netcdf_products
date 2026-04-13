@@ -23,19 +23,18 @@ from .widgets import build_expression_builder, build_group_tabs, build_legend
 
 LOGGER = logging.getLogger(__name__)
 
-pn.extension('tabulator', sizing_mode="stretch_width")
+pn.extension("tabulator", sizing_mode="stretch_width")
 
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments passed via --args."""
     parser = argparse.ArgumentParser(
-        description="Interactive NetCDF comparison application.")
-    parser.add_argument("reference",
-                        type=str,
-                        help="Path to the reference NetCDF file.")
-    parser.add_argument("target",
-                        type=str,
-                        help="Path to the target NetCDF file.")
+        description="Interactive NetCDF comparison application."
+    )
+    parser.add_argument(
+        "reference", type=str, help="Path to the reference NetCDF file."
+    )
+    parser.add_argument("target", type=str, help="Path to the target NetCDF file.")
     parser.add_argument(
         "--flag",
         type=str,
@@ -54,8 +53,9 @@ def parse_args() -> argparse.Namespace:
 
 def create_app() -> pn.template.FastListTemplate:
     """Create the Panel application."""
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s - %(levelname)s - %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
 
     args = parse_args()
 
@@ -65,8 +65,8 @@ def create_app() -> pn.template.FastListTemplate:
     LOGGER.info("Opening reference: %s", ref_path)
     LOGGER.info("Opening target: %s", tgt_path)
 
-    ref_ds = netCDF4.Dataset(str(ref_path), mode='r')
-    tgt_ds = netCDF4.Dataset(str(tgt_path), mode='r')
+    ref_ds = netCDF4.Dataset(str(ref_path), mode="r")
+    tgt_ds = netCDF4.Dataset(str(tgt_path), mode="r")
 
     # Build flags
     flags = None
@@ -110,8 +110,7 @@ def create_app() -> pn.template.FastListTemplate:
 
     # Initial comparison scan
     LOGGER.info("Scanning groups...")
-    state.group_results = scan_all_groups(ref_ds, tgt_ds, filter_info,
-                                          mask=active_mask)
+    state.group_results = scan_all_groups(ref_ds, tgt_ds, filter_info, mask=active_mask)
 
     # Build the main content area (will be rebuilt on expression changes)
     main_content = pn.Column(sizing_mode="stretch_both")

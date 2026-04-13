@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
 import posixpath
+from typing import TYPE_CHECKING
 
 import numpy
 
@@ -42,8 +42,7 @@ class Flag:
 
         # Extract the flag values and their meanings
         label: list[str] = variable.getncattr("flag_meanings").split()
-        flag_values: Iterable[float] = variable.getncattr(
-            "flag_values").tolist()
+        flag_values: Iterable[float] = variable.getncattr("flag_values").tolist()
 
         # Build a mapping from flag values to their meanings
         mapping = dict(zip(flag_values, label, strict=False))
@@ -53,8 +52,7 @@ class Flag:
 
         # Build a mapping from the variable name/flag meaning to the flag value
         self.mapping = {
-            f"{self.varname}/{value}": item
-            for item, value in mapping.items()
+            f"{self.varname}/{value}": item for item, value in mapping.items()
         }
 
         # Build the options for selection widgets
@@ -94,9 +92,7 @@ class Flag:
         # Build flag map: {flag_varname: set_of_selected_values}
         flag_map: dict[str, set[float]] = {}
         all_mappings = {
-            key: value
-            for flag in all_flags
-            for key, value in flag.mapping.items()
+            key: value for flag in all_flags for key, value in flag.mapping.items()
         }
         for item in selected_options:
             flag_name, _ = item.split("/", 1)

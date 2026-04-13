@@ -33,13 +33,12 @@ LOGGER = logging.getLogger(__name__)
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Interactive NetCDF comparison application (Dash).")
-    parser.add_argument("reference",
-                        type=str,
-                        help="Path to the reference NetCDF file.")
-    parser.add_argument("target",
-                        type=str,
-                        help="Path to the target NetCDF file.")
+        description="Interactive NetCDF comparison application (Dash)."
+    )
+    parser.add_argument(
+        "reference", type=str, help="Path to the reference NetCDF file."
+    )
+    parser.add_argument("target", type=str, help="Path to the target NetCDF file.")
     parser.add_argument(
         "--flag",
         type=str,
@@ -69,8 +68,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     """Create and run the Dash application."""
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s - %(levelname)s - %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
 
     args = parse_args()
 
@@ -80,8 +80,8 @@ def main() -> None:
     LOGGER.info("Opening reference: %s", ref_path)
     LOGGER.info("Opening target: %s", tgt_path)
 
-    ref_ds = netCDF4.Dataset(str(ref_path), mode='r')
-    tgt_ds = netCDF4.Dataset(str(tgt_path), mode='r')
+    ref_ds = netCDF4.Dataset(str(ref_path), mode="r")
+    tgt_ds = netCDF4.Dataset(str(tgt_path), mode="r")
 
     # Build flags
     flags = None
@@ -125,8 +125,7 @@ def main() -> None:
 
     # Initial comparison scan
     LOGGER.info("Scanning groups...")
-    state.group_results = scan_all_groups(ref_ds, tgt_ds, filter_info,
-                                          mask=active_mask)
+    state.group_results = scan_all_groups(ref_ds, tgt_ds, filter_info, mask=active_mask)
 
     # Create Dash app
     dash_app = dash.Dash(

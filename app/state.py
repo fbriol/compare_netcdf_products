@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
 import dataclasses
 import logging
-
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import pathlib
-    import numpy
+
     import netCDF4
+    import numpy
 
     from .comparison import FilterInfo, GroupComparisonResult
     from .data_loading import DataSource
@@ -48,10 +48,8 @@ class SessionState:
     active_mask: numpy.ndarray | None = None
     active_expression: str | None = None
     filter_info: FilterInfo | None = None
-    group_results: list[GroupComparisonResult] = dataclasses.field(
-        default_factory=list)
-    variable_cache: dict[str, DataSource] = dataclasses.field(
-        default_factory=dict)
+    group_results: list[GroupComparisonResult] = dataclasses.field(default_factory=list)
+    variable_cache: dict[str, DataSource] = dataclasses.field(default_factory=dict)
     max_cache_size: int = MAX_VARIABLE_CACHE_SIZE
 
     # Navigation state

@@ -15,12 +15,12 @@ Examples::
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar
 import ast
 import dataclasses
 import logging
 import posixpath
 import re
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy
 
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 
 # Regex to match ${/path/to/variable} references in expressions.
-_VAR_REF_RE = re.compile(r'\$\{([^}]+)\}')
+_VAR_REF_RE = re.compile(r"\$\{([^}]+)\}")
 
 
 class NumpyWrapper:
@@ -41,10 +41,12 @@ class NumpyWrapper:
         if hasattr(numpy, name):
             attr = getattr(numpy, name)
             if callable(attr) or isinstance(
-                    attr, (int, float, complex, bool, numpy.number)):
+                attr, (int, float, complex, bool, numpy.number)
+            ):
                 return attr
         raise AttributeError(
-            f"'{self.__class__.__name__}' object has no attribute '{name}'")
+            f"'{self.__class__.__name__}' object has no attribute '{name}'"
+        )
 
 
 @dataclasses.dataclass
@@ -88,7 +90,6 @@ class Expression:
             builtins_set = self.BUILTINS
 
             class NameExtractor(ast.NodeVisitor):
-
                 def visit_Name(self, node: ast.Name) -> None:
                     if node.id not in builtins_set:
                         variable_names.add(node.id)
@@ -160,8 +161,8 @@ def find_affected_groups(expr: str) -> set[str]:
 
 
 def create_expression_mask(
-        dataset: netCDF4.Dataset,
-        expr: str) -> tuple[numpy.ndarray | None, str | None]:
+    dataset: netCDF4.Dataset, expr: str
+) -> tuple[numpy.ndarray | None, str | None]:
     """Create a boolean mask from an expression.
 
     The *expr* should already be in evaluable form (i.e. the
@@ -182,7 +183,7 @@ def create_expression_mask(
     except SyntaxError as e:
         return None, f"Invalid expression '{expr}': {e}"
 
-    var_data = {'ds': dataset}
+    var_data = {"ds": dataset}
     try:
         mask = expression(var_data)
         return mask, None
