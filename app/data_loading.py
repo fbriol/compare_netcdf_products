@@ -416,9 +416,10 @@ def load_variable_data(
         DataSource for the requested variable.
 
     """
-    # Check cache first
+    # Check cache first (move to end for LRU)
     if varpath in state.variable_cache:
         LOGGER.info("load_variable_data: CACHE HIT for %s", varpath)
+        state.variable_cache.move_to_end(varpath)
         return state.variable_cache[varpath]
 
     LOGGER.info("load_variable_data: CACHE MISS for %s", varpath)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections
 import dataclasses
 import logging
 from typing import TYPE_CHECKING
@@ -49,7 +50,9 @@ class SessionState:
     active_expression: str | None = None
     filter_info: FilterInfo | None = None
     group_results: list[GroupComparisonResult] = dataclasses.field(default_factory=list)
-    variable_cache: dict[str, DataSource] = dataclasses.field(default_factory=dict)
+    variable_cache: collections.OrderedDict[str, DataSource] = dataclasses.field(
+        default_factory=collections.OrderedDict
+    )
     max_cache_size: int = MAX_VARIABLE_CACHE_SIZE
 
     # Navigation state

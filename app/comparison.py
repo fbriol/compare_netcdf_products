@@ -448,3 +448,78 @@ def scan_all_groups(
 
     _scan(reference, target)
     return results
+
+
+def rescan_affected_groups(
+    reference: netCDF4.Dataset,
+    target: netCDF4.Dataset,
+    previous_results: list[GroupComparisonResult],
+    filter_info: FilterInfo | None = None,
+    mask: numpy.ndarray | None = None,
+) -> list[GroupComparisonResult]:
+    """Re-scan only groups affected by the filter, reuse others.
+
+    When a filter is applied, only groups whose variables match the mask
+    shape need to be recomputed. Groups unaffected by the filter keep
+    their previous comparison results (with updated filter_description).
+
+    Args:
+        reference: Reference NetCDF dataset.
+        target: Target NetCDF dataset.
+        previous_results: Results from a prior scan_all_groups call.
+        filter_info: Optional filter information.
+        mask: Optional boolean mask for expression filtering.
+
+    Returns:
+        Updated list of group comparison results.
+
+    """
+    if mask is None or not previous_results:
+        return scan_all_groups(reference, target, filter_info, mask=mask)
+
+    affected_groups: set[str] = set()
+    if filter_info is not None:
+        affected_groups = filter_info.affected_groups
+
+    # Build a lookup of previous results by group_path
+    prev_by_path = {r.group_path: r for r in previous_results}
+
+    results: list[GroupComparisonResult] = []
+
+    def _rescan(ref_grp: netCDF4.Group, tgt_grp: netCDF4.Group) -> None:
+        group_path = ref_grp.path if hasattr(ref_grp, "path") else "main"
+        normalized = group_path.lstrip("/")
+
+        # Check if this group is affected by the filter
+        is_affected = any(
+            normalized == ag or normalized.startswith(ag + "/")
+            for ag in affected_groups
+        )
+
+        if is_affected:
+            LOGGER.info("Recomparing affected group: %s", group_path)
+            result = compare_group(ref_grp, tgt_grp, filter_info, mask=mask)
+        elif group_path in prev_by_path:
+            LOGGER.info("Reusing previous result for group: %s", group_path)
+            prev = prev_by_path[group_path]
+            # Update filter_description even for unaffected groups
+            desc = ""
+            if filter_info is not None:
+                desc = filter_info.get_filter_description(group_path)
+            result = GroupComparisonResult(
+                group_path=prev.group_path,
+                attributes=prev.attributes,
+                variables=prev.variables,
+                filter_description=desc,
+            )
+        else:
+            LOGGER.info("Comparing new group: %s", group_path)
+            result = compare_group(ref_grp, tgt_grp, filter_info, mask=mask)
+
+        results.append(result)
+        for grp_name in ref_grp.groups:
+            if grp_name in tgt_grp.groups:
+                _rescan(ref_grp.groups[grp_name], tgt_grp.groups[grp_name])
+
+    _rescan(reference, target)
+    return results

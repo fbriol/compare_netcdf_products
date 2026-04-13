@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
     from .state import SessionState
 
-from .comparison import FilterInfo, scan_all_groups
+from .comparison import FilterInfo, rescan_affected_groups, scan_all_groups
 from .constants import STATUS_COLORS, STATUS_TEXT_COLORS
 from .data_loading import load_variable_data
 from .expression import (
@@ -184,8 +184,12 @@ def _apply_expression_no_nav(state: SessionState, raw: str):
         total_points=total,
         affected_groups=affected,
     )
-    state.group_results = scan_all_groups(
-        state.ref_ds, state.tgt_ds, state.filter_info, mask=state.active_mask
+    state.group_results = rescan_affected_groups(
+        state.ref_ds,
+        state.tgt_ds,
+        state.group_results,
+        state.filter_info,
+        mask=state.active_mask,
     )
     msg = (
         f"Filter active: {masked:,}/{total:,} points masked "
@@ -802,15 +806,14 @@ def _build_group_browser(state, group_path):
     return content
 
 
-def _build_filtered_map(data_source, zoom_range):
-    """Build a Scattergeo figure filtered by zoom_range.
+def _get_map_arrays(data_source):
+    """Return downsampled arrays for the map, cached on the DataSource."""
+    if hasattr(data_source, "_map_cache"):
+        return data_source._map_cache
 
-    All points are shown in light grey for context.  Points within the
-    zoomed index range are overlaid in colour.  The geographic viewport
-    zooms to the filtered points with independent padding per axis.
-    """
     d = data_source.source_data
     if "longitude" not in d:
+        data_source._map_cache = None
         return None
 
     lon = numpy.asarray(d["longitude"], dtype=float)
@@ -825,15 +828,43 @@ def _build_filtered_map(data_source, zoom_range):
     if n > _MAX_MAP:
         step = max(1, n // _MAX_MAP)
         idx = numpy.arange(0, n, step)
-        lon = lon[idx]
-        lat = lat[idx]
-        expected = expected[idx]
-        computed = computed[idx]
-        x = x[idx]
+        lon, lat = lon[idx], lat[idx]
+        expected, computed, x = expected[idx], computed[idx], x[idx]
 
     all_valid = ~(numpy.isnan(lon) | numpy.isnan(lat))
-    all_lon = lon[all_valid]
-    all_lat = lat[all_valid]
+    result = {
+        "lon": lon,
+        "lat": lat,
+        "expected": expected,
+        "computed": computed,
+        "x": x,
+        "all_valid": all_valid,
+        "all_lon": lon[all_valid],
+        "all_lat": lat[all_valid],
+    }
+    data_source._map_cache = result
+    return result
+
+
+def _build_filtered_map(data_source, zoom_range):
+    """Build a Scattergeo figure filtered by zoom_range.
+
+    All points are shown in light grey for context.  Points within the
+    zoomed index range are overlaid in colour.  The geographic viewport
+    zooms to the filtered points with independent padding per axis.
+    """
+    arrays = _get_map_arrays(data_source)
+    if arrays is None:
+        return None
+
+    lon = arrays["lon"]
+    lat = arrays["lat"]
+    expected = arrays["expected"]
+    computed = arrays["computed"]
+    x = arrays["x"]
+    all_valid = arrays["all_valid"]
+    all_lon = arrays["all_lon"]
+    all_lat = arrays["all_lat"]
 
     has_zoom = zoom_range and not zoom_range.get("auto")
 
@@ -1906,23 +1937,28 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         }
         return (result, f"Outliers detected: {n_outliers}", count_style)
 
-    # ── Plot visibility toggle ─────────────────────────────────────
+    # ── Plot visibility toggle (clientside — no server round-trip) ──
 
-    @app.callback(
+    app.clientside_callback(
+        """
+        function(visibleLabels, containerIds) {
+            var styles = [];
+            for (var i = 0; i < containerIds.length; i++) {
+                var label = containerIds[i].label;
+                if (visibleLabels.indexOf(label) !== -1) {
+                    styles.push({"marginBottom": "16px"});
+                } else {
+                    styles.push({"display": "none"});
+                }
+            }
+            return styles;
+        }
+        """,
         Output({"type": "plot-container", "label": ALL}, "style"),
         Input("plot-visibility", "value"),
         State({"type": "plot-container", "label": ALL}, "id"),
         prevent_initial_call=True,
     )
-    def toggle_plots(visible_labels, container_ids):
-        styles = []
-        for cid in container_ids:
-            label = cid["label"]
-            if label in visible_labels:
-                styles.append({"marginBottom": "16px"})
-            else:
-                styles.append({"display": "none"})
-        return styles
 
     # ── Marker size ────────────────────────────────────────────────
     # NOTE: Plotly figures in Dash are immutable once rendered.
