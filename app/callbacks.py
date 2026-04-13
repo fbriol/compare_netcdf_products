@@ -603,6 +603,18 @@ def _build_filtered_map(data_source, zoom_range):
     computed = numpy.asarray(d["computed"], dtype=float)
     x = numpy.asarray(d["x"], dtype=float)
 
+    # Downsample for map performance (Scattergeo is slow)
+    _MAX_MAP = 5_000
+    n = len(lon)
+    if n > _MAX_MAP:
+        step = max(1, n // _MAX_MAP)
+        idx = numpy.arange(0, n, step)
+        lon = lon[idx]
+        lat = lat[idx]
+        expected = expected[idx]
+        computed = computed[idx]
+        x = x[idx]
+
     all_valid = ~(numpy.isnan(lon) | numpy.isnan(lat))
     all_lon = lon[all_valid]
     all_lat = lat[all_valid]
@@ -1471,6 +1483,8 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
     # ── Zoom sync: Signal Comparison → other index-based graphs ──
     # Listen to ALL graphs' relayoutData, detect if Signal Comparison
     # triggered, then apply its x-range to all other index-based graphs.
+    # The zoom-range store update is debounced (300ms) so the server-side
+    # map callback only fires once the user has finished zooming.
     app.clientside_callback(
         """
         function(allRelayoutData, allIds) {
@@ -1512,7 +1526,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                 return window.dash_clientside.no_update;
             }
 
-            // Apply to every other Plotly graph with x-axis "Index"
+            // Apply to every other Plotly graph with x-axis "Index" (instant)
             window._zoomSyncing = true;
             var graphs = document.querySelectorAll('.js-plotly-plot');
             graphs.forEach(function(gd) {

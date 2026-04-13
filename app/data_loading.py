@@ -36,6 +36,8 @@ def lttb_downsample(x: numpy.ndarray, y: numpy.ndarray,
                     n_out: int) -> tuple[numpy.ndarray, numpy.ndarray]:
     """Downsample using Largest-Triangle-Three-Bucket algorithm.
 
+    Vectorised per-bucket selection for speed.
+
     Args:
         x: X values.
         y: Y values.
@@ -49,41 +51,38 @@ def lttb_downsample(x: numpy.ndarray, y: numpy.ndarray,
     if n <= n_out:
         return x, y
 
-    # Always keep first and last points
-    sampled_indices = [0]
+    # Replace NaN in y with 0 for area computation (avoids NaN propagation)
+    y_safe = numpy.where(numpy.isnan(y), 0.0, y)
+
+    sampled_indices = numpy.empty(n_out, dtype=numpy.intp)
+    sampled_indices[0] = 0
+    sampled_indices[-1] = n - 1
+
     bucket_size = (n - 2) / (n_out - 2)
-
     a = 0  # index of previously selected point
+
     for i in range(1, n_out - 1):
-        # Calculate bucket boundaries
         bucket_start = int((i - 1) * bucket_size) + 1
-        bucket_end = int(i * bucket_size) + 1
-        bucket_end = min(bucket_end, n)
+        bucket_end = min(int(i * bucket_size) + 1, n)
 
-        # Calculate next bucket average for the triangle
-        next_bucket_start = int(i * bucket_size) + 1
-        next_bucket_end = int((i + 1) * bucket_size) + 1
-        next_bucket_end = min(next_bucket_end, n)
+        next_start = int(i * bucket_size) + 1
+        next_end = min(int((i + 1) * bucket_size) + 1, n)
 
-        avg_x = numpy.mean(x[next_bucket_start:next_bucket_end])
-        avg_y = numpy.nanmean(y[next_bucket_start:next_bucket_end])
+        avg_x = numpy.mean(x[next_start:next_end])
+        avg_y = numpy.mean(y_safe[next_start:next_end])
 
-        # Find the point in the current bucket that forms the largest triangle
-        max_area = -1.0
-        max_idx = bucket_start
-        for j in range(bucket_start, bucket_end):
-            area = abs((x[a] - avg_x) * (y[j] - y[a]) -
-                       (x[a] - x[j]) * (avg_y - y[a]))
-            if area > max_area:
-                max_area = area
-                max_idx = j
+        # Vectorised area computation for the whole bucket
+        bx = x[bucket_start:bucket_end]
+        by = y_safe[bucket_start:bucket_end]
+        areas = numpy.abs(
+            (x[a] - avg_x) * (by - y_safe[a])
+            - (x[a] - bx) * (avg_y - y_safe[a])
+        )
+        best = int(numpy.argmax(areas)) + bucket_start
+        sampled_indices[i] = best
+        a = best
 
-        sampled_indices.append(max_idx)
-        a = max_idx
-
-    sampled_indices.append(n - 1)
-    idx = numpy.array(sampled_indices)
-    return x[idx], y[idx]
+    return x[sampled_indices], y[sampled_indices]
 
 
 class DataSource:

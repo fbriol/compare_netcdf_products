@@ -21,7 +21,7 @@ STATUS_TEXT_COLORS = {
 }
 
 #: Maximum number of points to display in scatter plots before downsampling.
-MAX_DISPLAY_POINTS = 100_000
+MAX_DISPLAY_POINTS = 20_000
 
 #: Maximum number of variables to keep in the LRU cache.
 MAX_VARIABLE_CACHE_SIZE = 5
