@@ -228,9 +228,8 @@ def _get_clickable_varpaths(state):
     """Build a flat list of all clickable (different/almost_equal) varpaths."""
     paths = []
     for gr in state.group_results:
-        for v in gr.variables:
-            if v.status in ("different", "almost_equal"):
-                paths.append(v.varpath)
+        paths.extend(v.varpath for v in gr.variables
+                        if v.status in ("different", "almost_equal"))
     return paths
 
 
@@ -238,10 +237,8 @@ def _build_global_summary(state):
     """Build a summary table of ALL problematic variables across all groups."""
     problem_vars = []
     for gr in state.group_results:
-        for v in gr.variables:
-            if v.status in ("different", "almost_equal") and v.stats is not None:
-                problem_vars.append(v)
-
+        problem_vars.extend(v for v in gr.variables
+                            if v.status in ("different", "almost_equal") and v.stats is not None)
     if not problem_vars:
         return []
 
@@ -253,13 +250,24 @@ def _build_global_summary(state):
     content.append(html.H4(
         "\u26a0 Global Summary \u2014 Variables with Differences",
         style={"color": "#c62828", "margin": "16px 0 8px 0"}))
-    content.append(html.Div(
-        f"{len(problem_vars)} variable(s) with differences across all groups. "
-        "Sorted by max |diff| descending. Click a row to inspect.",
-        style={
-            "fontSize": "11px", "color": "#78909c",
-            "marginBottom": "6px",
-        }))
+    content.append(html.Div([
+        html.Span(
+            f"{len(problem_vars)} variable(s) with differences across all "
+            "groups. Sorted by max |diff| descending. Click a row to inspect.",
+            style={"fontSize": "11px", "color": "#78909c"}),
+        dcc.Input(
+            id="summary-search-input",
+            type="text",
+            placeholder="Filter variables\u2026",
+            debounce=True,
+            style={
+                "marginLeft": "16px", "padding": "4px 10px",
+                "border": "1px solid #cfd8dc", "borderRadius": "4px",
+                "fontSize": "12px", "width": "250px",
+            },
+        ),
+    ], style={"display": "flex", "alignItems": "center",
+              "marginBottom": "6px"}))
 
     rows = []
     for v in problem_vars:
@@ -293,7 +301,7 @@ def _build_global_summary(state):
             html.Th("Std", style={"padding": "8px 12px",
                      "textAlign": "left"}),
         ], style={"backgroundColor": "#1565c0", "color": "white"})),
-        html.Tbody(rows),
+        html.Tbody(rows, id="summary-table-body"),
     ], style={
         "width": "100%", "borderCollapse": "collapse",
         "border": "1px solid #e0e0e0", "fontSize": "12px",
@@ -445,12 +453,13 @@ def _build_group_browser(state, group_path):
             "\U0001f4cb Attributes",
             style={"color": "#37474f", "margin": "16px 0 8px 0"}))
         rows = []
-        for a in gr.attributes:
-            rows.append(html.Tr([
+        rows.extend([
+            html.Tr([
                 html.Td(a.name, style={"padding": "6px 12px"}),
                 html.Td(str(a.ref_value), style={"padding": "6px 12px"}),
                 html.Td(str(a.tgt_value), style={"padding": "6px 12px"}),
-            ]))
+            ]) for a in gr.attributes
+        ])
         content.append(html.Table([
             html.Thead(html.Tr([
                 html.Th("Attribute", style={"padding": "8px 12px",
@@ -576,7 +585,115 @@ def _build_group_browser(state, group_path):
     return content
 
 
-def _build_detail_view(state, varpath):
+def _build_filtered_map(data_source, zoom_range):
+    """Build a Scattergeo figure filtered by zoom_range.
+
+    All points are shown in light grey for context.  Points within the
+    zoomed index range are overlaid in colour.  The geographic viewport
+    zooms to the filtered points but is forced to a square aspect ratio
+    so the rendered map rectangle keeps a consistent size.
+    """
+    d = data_source.source_data
+    if "longitude" not in d:
+        return None
+
+    lon = numpy.asarray(d["longitude"], dtype=float)
+    lat = numpy.asarray(d["latitude"], dtype=float)
+    expected = numpy.asarray(d["expected"], dtype=float)
+    computed = numpy.asarray(d["computed"], dtype=float)
+    x = numpy.asarray(d["x"], dtype=float)
+
+    all_valid = ~(numpy.isnan(lon) | numpy.isnan(lat))
+    all_lon = lon[all_valid]
+    all_lat = lat[all_valid]
+
+    has_zoom = (zoom_range and not zoom_range.get("auto"))
+
+    if has_zoom:
+        xmin = float(zoom_range["min"])
+        xmax = float(zoom_range["max"])
+        mask = ((x >= xmin) & (x <= xmax) & all_valid)
+    else:
+        mask = all_valid
+
+    lon_f = lon[mask]
+    lat_f = lat[mask]
+    exp_f = expected[mask]
+    comp_f = computed[mask]
+
+    # Colour range from filtered points
+    all_vals = numpy.concatenate([exp_f, comp_f])
+    valid_v = all_vals[~numpy.isnan(all_vals)]
+    cmin = float(numpy.nanmin(valid_v)) if len(valid_v) > 0 else 0.0
+    cmax = float(numpy.nanmax(valid_v)) if len(valid_v) > 0 else 1.0
+
+    fig = go.Figure()
+
+    # Background: full track in light grey (only when zoomed)
+    if has_zoom:
+        fig.add_trace(go.Scattergeo(
+            lon=all_lon, lat=all_lat, mode="markers",
+            marker={"size": 2, "color": "#ccc"},
+            name="Full track",
+            hoverinfo="skip",
+        ))
+
+    # Foreground: filtered points in colour
+    fig.add_trace(go.Scattergeo(
+        lon=lon_f, lat=lat_f, mode="markers",
+        marker={"size": 4, "color": exp_f, "colorscale": "Viridis",
+                "cmin": cmin, "cmax": cmax, "showscale": False},
+        name="Reference",
+        hovertemplate=("lon: %{lon:.3f}<br>lat: %{lat:.3f}"
+                       "<br>reference: %{marker.color:.4g}"
+                       "<extra></extra>"),
+    ))
+    fig.add_trace(go.Scattergeo(
+        lon=lon_f, lat=lat_f, mode="markers",
+        marker={"size": 4, "color": comp_f, "colorscale": "Viridis",
+                "cmin": cmin, "cmax": cmax, "showscale": False},
+        name="Target",
+        visible="legendonly",
+        hovertemplate=("lon: %{lon:.3f}<br>lat: %{lat:.3f}"
+                       "<br>target: %{marker.color:.4g}"
+                       "<extra></extra>"),
+    ))
+
+    # Compute viewport: zoom to filtered points, force square aspect
+    view_lon = lon_f[~numpy.isnan(lon_f)] if len(lon_f) > 0 else all_lon
+    view_lat = lat_f[~numpy.isnan(lat_f)] if len(lat_f) > 0 else all_lat
+
+    geo_kwargs = {
+        "showcoastlines": True, "coastlinecolor": "#555",
+        "showland": True, "landcolor": "#e8e8e8",
+        "showocean": True, "oceancolor": "#d4ecf7",
+        "showlakes": True, "lakecolor": "#d4ecf7",
+        "showcountries": True, "countrycolor": "#aaa",
+        "projection_type": "equirectangular",
+    }
+    if len(view_lon) > 0:
+        lon_mid = float((view_lon.min() + view_lon.max()) / 2)
+        lat_mid = float((view_lat.min() + view_lat.max()) / 2)
+        lon_span = float(view_lon.max() - view_lon.min())
+        lat_span = float(view_lat.max() - view_lat.min())
+        # Force square: take the largest span, enforce a minimum of 5°
+        half = max(lon_span, lat_span, 5.0) / 2 + 2.0
+        geo_kwargs["lonaxis_range"] = [lon_mid - half, lon_mid + half]
+        geo_kwargs["lataxis_range"] = [lat_mid - half, lat_mid + half]
+        geo_kwargs["projection_rotation_lon"] = lon_mid
+        geo_kwargs["projection_rotation_lat"] = lat_mid
+
+    fig.update_geos(**geo_kwargs)
+    fig.update_layout(
+        height=500,
+        margin={"l": 0, "r": 0, "t": 10, "b": 0},
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02,
+                "xanchor": "left", "x": 0, "itemsizing": "constant"},
+    )
+    return fig
+
+
+def _build_detail_view(state, varpath, zoom_range=None):
     """Build the detail view for a variable."""
     # Find the long name from comparison results
     long_name = varpath
@@ -853,6 +970,29 @@ def _build_detail_view(state, varpath):
         "backgroundColor": "#ffffff", "marginBottom": "12px",
     }))
 
+    # Apply saved zoom range to all figures
+    if zoom_range and not zoom_range.get("auto"):
+        xmin = zoom_range.get("min")
+        xmax = zoom_range.get("max")
+        if xmin is not None and xmax is not None:
+            for _label, fig in plot_configs:
+                layout = fig.to_plotly_json().get("layout", {})
+                xaxis = layout.get("xaxis", {})
+                title = xaxis.get("title", "")
+                if isinstance(title, dict):
+                    title = title.get("text", "")
+                if title == "Index":
+                    fig.update_layout(xaxis_range=[xmin, xmax])
+            # Rebuild geographical map filtered to zoom range
+            filtered_map = _build_filtered_map(data_source, zoom_range)
+            if filtered_map is not None:
+                plot_configs = [
+                    (label, filtered_map)
+                    if label == "Geographical Position"
+                    else (label, fig)
+                    for label, fig in plot_configs
+                ]
+
     # Plot graphs - each wrapped in a togglable div, with stable graph ids
     _default_visible = {"Signal Comparison"}
     for label, fig in plot_configs:
@@ -880,14 +1020,14 @@ def _build_detail_view(state, varpath):
     return content
 
 
-def _render_current_view(state):
+def _render_current_view(state, zoom_range=None):
     """Render the current view (group or detail) based on state."""
     if state.current_view == "detail" and state.current_varpath:
         varpath = state.current_varpath
         parent = ("/" + "/".join(varpath.strip("/").split("/")[:-1])
                   if "/" in varpath.strip("/") else "/")
         breadcrumb = _build_breadcrumb(parent)
-        detail = _build_detail_view(state, varpath)
+        detail = _build_detail_view(state, varpath, zoom_range=zoom_range)
         return [breadcrumb, *detail]
     else:
         group_path = state.current_group_path or "/"
@@ -917,15 +1057,16 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         Input("nav-current-view", "data"),
         Input("nav-group-path", "data"),
         Input("nav-varpath", "data"),
+        State("zoom-range", "data"),
     )
-    def render_main_content(view, group_path, varpath):
+    def render_main_content(view, group_path, varpath, zoom_range):
         if view == "detail" and varpath:
             state.current_view = "detail"
             state.current_varpath = varpath
         else:
             state.current_view = "group"
             state.current_group_path = group_path or "/"
-        return _render_current_view(state)
+        return _render_current_view(state, zoom_range=zoom_range)
 
     # ── Navigation: group buttons ──────────────────────────────────
 
@@ -1149,6 +1290,31 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         """,
         Output("var-search-input", "id"),
         Input("var-search-input", "value"),
+        prevent_initial_call=True,
+    )
+
+    # ── Search: filter summary table rows (clientside) ─────────
+
+    app.clientside_callback(
+        """
+        function(searchValue) {
+            var tbody = document.getElementById('summary-table-body');
+            if (!tbody) return window.dash_clientside.no_update;
+            var rows = tbody.getElementsByTagName('tr');
+            var term = (searchValue || '').toLowerCase();
+            for (var i = 0; i < rows.length; i++) {
+                var cells = rows[i].getElementsByTagName('td');
+                if (cells.length > 0) {
+                    var name = cells[0].textContent.toLowerCase();
+                    rows[i].style.display = (term === '' || name.indexOf(term) !== -1)
+                        ? '' : 'none';
+                }
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output("summary-search-input", "id"),
+        Input("summary-search-input", "value"),
         prevent_initial_call=True,
     )
 
@@ -1397,89 +1563,8 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
             return no_update
 
         data_source = load_variable_data(state, varpath)
-        if "longitude" not in data_source.source_data:
-            return no_update
-
-        d = data_source.source_data
-        lon = numpy.asarray(d["longitude"], dtype=float)
-        lat = numpy.asarray(d["latitude"], dtype=float)
-        expected = numpy.asarray(d["expected"], dtype=float)
-        computed = numpy.asarray(d["computed"], dtype=float)
-        x = numpy.asarray(d["x"], dtype=float)
-
-        if zoom_range.get("auto"):
-            # Reset: show all points
-            mask = ~(numpy.isnan(lon) | numpy.isnan(lat))
-        else:
-            xmin = float(zoom_range["min"])
-            xmax = float(zoom_range["max"])
-            mask = ((x >= xmin) & (x <= xmax)
-                    & ~numpy.isnan(lon) & ~numpy.isnan(lat))
-
-        lon_f = lon[mask]
-        lat_f = lat[mask]
-        exp_f = expected[mask]
-        comp_f = computed[mask]
-
-        # Shared colour range
-        all_vals = numpy.concatenate([exp_f, comp_f])
-        valid_v = all_vals[~numpy.isnan(all_vals)]
-        if len(valid_v) > 0:
-            cmin = float(numpy.nanmin(valid_v))
-            cmax = float(numpy.nanmax(valid_v))
-        else:
-            cmin, cmax = 0.0, 1.0
-
-        fig = go.Figure()
-        fig.add_trace(go.Scattergeo(
-            lon=lon_f, lat=lat_f, mode="markers",
-            marker={"size": 4, "color": exp_f, "colorscale": "Viridis",
-                        "cmin": cmin, "cmax": cmax, "showscale": False},
-            name="Reference",
-            hovertemplate=("lon: %{lon:.3f}<br>lat: %{lat:.3f}"
-                           "<br>reference: %{marker.color:.4g}"
-                           "<extra></extra>"),
-        ))
-        fig.add_trace(go.Scattergeo(
-            lon=lon_f, lat=lat_f, mode="markers",
-            marker={"size": 4, "color": comp_f, "colorscale": "Viridis",
-                        "cmin": cmin, "cmax": cmax, "showscale": False},
-            name="Target",
-            visible="legendonly",
-            hovertemplate=("lon: %{lon:.3f}<br>lat: %{lat:.3f}"
-                           "<br>target: %{marker.color:.4g}"
-                           "<extra></extra>"),
-        ))
-
-        # Auto-fit the map to the visible points
-        valid_lon = lon_f[~numpy.isnan(lon_f)]
-        valid_lat = lat_f[~numpy.isnan(lat_f)]
-        geo_kwargs = {
-            "showcoastlines": True, "coastlinecolor": "#555",
-            "showland": True, "landcolor": "#e8e8e8",
-            "showocean": True, "oceancolor": "#d4ecf7",
-            "showlakes": True, "lakecolor": "#d4ecf7",
-            "showcountries": True, "countrycolor": "#aaa",
-            "projection_type": "natural earth",
-        }
-        if len(valid_lon) > 0:
-            margin = 2.0  # degrees padding
-            geo_kwargs["lonaxis_range"] = [
-                float(valid_lon.min()) - margin,
-                float(valid_lon.max()) + margin,
-            ]
-            geo_kwargs["lataxis_range"] = [
-                float(valid_lat.min()) - margin,
-                float(valid_lat.max()) + margin,
-            ]
-        fig.update_geos(**geo_kwargs)
-        fig.update_layout(
-            height=500,
-            margin={"l": 0, "r": 0, "t": 10, "b": 0},
-            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02,
-                        "xanchor": "left", "x": 0, "itemsizing": "constant"},
-        )
-        return fig
+        fig = _build_filtered_map(data_source, zoom_range)
+        return fig if fig is not None else no_update
 
     # ── Filter: variable hint (show min/max) ─────────────────────
 
@@ -1713,24 +1798,30 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
     # dropdown keeps its selection state.
 
     @app.callback(
-        Output({"type": "plot-graph", "label": ALL}, "figure"),
+        Output({"type": "plot-graph", "label": ALL}, "figure",
+               allow_duplicate=True),
+        Output("outlier-count-display", "children", allow_duplicate=True),
+        Output("outlier-count-display", "style", allow_duplicate=True),
+        Output("outlier-stats", "data", allow_duplicate=True),
         Input("flag-dropdown", "value"),
         State("nav-varpath", "data"),
         State({"type": "plot-graph", "label": ALL}, "id"),
+        State("outlier-sigma-slider", "value"),
         prevent_initial_call=True,
     )
-    def apply_flag_filter(selected_flags, varpath, graph_ids):
+    def apply_flag_filter(selected_flags, varpath, graph_ids, n_sigma):
         import numpy
+        n_graphs = len(graph_ids) if graph_ids else 0
         if not varpath or not graph_ids:
-            return [no_update] * len(graph_ids) if graph_ids else []
+            return ([no_update] * n_graphs, no_update, no_update, no_update)
 
         try:
             data_source = load_variable_data(state, varpath)
         except Exception:
-            return [no_update] * len(graph_ids)
+            return ([no_update] * n_graphs, no_update, no_update, no_update)
 
         if not data_source.flags:
-            return [no_update] * len(graph_ids)
+            return ([no_update] * n_graphs, no_update, no_update, no_update)
 
         # Apply flag filter on the DataSource
         if not selected_flags:
@@ -1753,6 +1844,51 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         new_configs = build_all_figures(long_name, data_source)
         new_fig_map = dict(new_configs)
 
+        # Recompute outliers on filtered data
+        d = data_source.source_data
+        diff_arr = numpy.asarray(d["difference"], dtype=float)
+        valid_diff = diff_arr[~numpy.isnan(diff_arr)]
+        outlier_mean = float(numpy.mean(valid_diff)) if len(valid_diff) > 0 else 0.0
+        outlier_std = float(numpy.std(valid_diff)) if len(valid_diff) > 0 else 1.0
+        if not n_sigma:
+            n_sigma = 3
+        outlier_mask = numpy.abs(diff_arr - outlier_mean) > (n_sigma * outlier_std)
+        n_outliers = int(numpy.nansum(outlier_mask))
+
+        x_arr = numpy.asarray(d["x"])
+        expected_arr = numpy.asarray(d["expected"], dtype=float)
+        computed_arr = numpy.asarray(d["computed"], dtype=float)
+
+        if numpy.any(outlier_mask) and "Signal Comparison" in new_fig_map:
+            new_fig_map["Signal Comparison"].add_trace(go.Scattergl(
+                x=x_arr[outlier_mask], y=expected_arr[outlier_mask],
+                mode="markers",
+                marker={"size": 6, "color": "orange", "symbol": "diamond",
+                            "line": {"width": 1, "color": "red"}},
+                name="Reference (outlier)",
+                hovertemplate=("index: %{x}<br>reference: %{y}<br>"
+                               "<b>OUTLIER</b><extra></extra>"),
+            ))
+            new_fig_map["Signal Comparison"].add_trace(go.Scattergl(
+                x=x_arr[outlier_mask], y=computed_arr[outlier_mask],
+                mode="markers",
+                marker={"size": 6, "color": "yellow", "symbol": "diamond",
+                            "line": {"width": 1, "color": "red"}},
+                name="Target (outlier)",
+                hovertemplate=("index: %{x}<br>target: %{y}<br>"
+                               "<b>OUTLIER</b><extra></extra>"),
+            ))
+        if numpy.any(outlier_mask) and "Signal Difference" in new_fig_map:
+            new_fig_map["Signal Difference"].add_trace(go.Scattergl(
+                x=x_arr[outlier_mask], y=diff_arr[outlier_mask],
+                mode="markers",
+                marker={"size": 6, "color": "orange", "symbol": "diamond",
+                            "line": {"width": 1, "color": "red"}},
+                name="Outlier",
+                hovertemplate=("index: %{x}<br>difference: %{y}<br>"
+                               "<b>OUTLIER</b><extra></extra>"),
+            ))
+
         # Return figures in the same order as graph_ids
         result = []
         for gid in graph_ids:
@@ -1761,7 +1897,17 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                 result.append(new_fig_map[label])
             else:
                 result.append(no_update)
-        return result
+
+        count_style = {
+            "fontSize": "12px", "fontWeight": "600", "padding": "4px 12px",
+            "borderRadius": "12px",
+            "color": "#c62828" if n_outliers > 0 else "#2e7d32",
+            "backgroundColor": "#ffcdd2" if n_outliers > 0 else "#c8e6c9",
+        }
+        return (result,
+                f"Outliers detected: {n_outliers}",
+                count_style,
+                {"mean": outlier_mean, "std": outlier_std})
 
     # ── HTML export ────────────────────────────────────────────────
 
@@ -1917,30 +2063,41 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         Output("filter-banner", "children", allow_duplicate=True),
         Output("filter-banner", "style", allow_duplicate=True),
         Output("url-initial-load", "data"),
+        Output("zoom-range", "data", allow_duplicate=True),
         Input("url-location", "search"),
         State("url-initial-load", "data"),
         prevent_initial_call=True,
     )
     def restore_from_url(search, is_initial):
+        n_out = 12
         if not is_initial or not search:
-            return (no_update,) * 11
+            return (no_update,) * n_out
         import urllib.parse
         params = dict(urllib.parse.parse_qsl(
             search.lstrip("?")))
         if not params:
-            return (no_update,) * 11
+            return (no_update,) * n_out
 
         view = params.get("view", "group")
         group_path = params.get("group", "/")
         varpath = params.get("var")
         filter_json = params.get("filter")
         expr_text = params.get("expr", "")
+        zoom_json = params.get("zoom")
 
         # Restore conditions
         conditions = []
         if filter_json:
             try:
                 conditions = json.loads(filter_json)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # Restore zoom range
+        zoom_range = no_update
+        if zoom_json:
+            try:
+                zoom_range = json.loads(zoom_json)
             except (json.JSONDecodeError, TypeError):
                 pass
 
@@ -1965,10 +2122,14 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
             state.current_group_path = group_path
 
         banner = _make_banner(state)
-        content = _render_current_view(state)
+        # Parse zoom_range for figure construction
+        restored_zoom = None
+        if zoom_range is not no_update:
+            restored_zoom = zoom_range
+        content = _render_current_view(state, zoom_range=restored_zoom)
 
         return (view, group_path, varpath,
                 conditions, expr_text,
                 status_msg, status_style,
                 content, *banner,
-                False)
+                False, zoom_range)

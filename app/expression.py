@@ -206,8 +206,7 @@ def list_all_variables(dataset: netCDF4.Dataset) -> list[str]:
     variables: list[str] = []
 
     def _walk_group(group: netCDF4.Group, prefix: str) -> None:
-        for varname in sorted(group.variables):
-            variables.append(f"{prefix}{varname}")
+        variables.extend(f"{prefix}{varname}" for varname in sorted(group.variables))
         for grp_name, subgroup in sorted(group.groups.items()):
             _walk_group(subgroup, f"{prefix}{grp_name}/")
 
