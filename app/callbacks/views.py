@@ -7,7 +7,7 @@ global summary, breadcrumb, etc.).
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy
 import plotly.graph_objects as go
@@ -28,10 +28,10 @@ from ..utils import (
 LOGGER = logging.getLogger(__name__)
 
 
-def build_breadcrumb(group_path):
+def build_breadcrumb(group_path: str) -> list[Any]:
     """Build clickable breadcrumb components."""
     parts = [p for p in group_path.split("/") if p]
-    items = []
+    items: list[Any] = []
 
     items.append(
         html.Button(
@@ -89,7 +89,7 @@ def get_clickable_varpaths(state):
     sequence.  Other variables can still be viewed by clicking in
     the group browser.
     """
-    paths = []
+    paths: list[str] = []
     for gr in state.group_results:
         paths.extend(
             v.varpath for v in gr.variables if v.status in ("different", "almost_equal")
@@ -99,7 +99,7 @@ def get_clickable_varpaths(state):
 
 def build_global_summary(state):
     """Build a summary table of ALL problematic variables across all groups."""
-    problem_vars = []
+    problem_vars: list[Any] = []
     for gr in state.group_results:
         problem_vars.extend(
             v
@@ -112,7 +112,7 @@ def build_global_summary(state):
     # Sort by max absolute error descending
     problem_vars.sort(key=lambda v: abs(float(v.stats.max_diff)), reverse=True)
 
-    content = []
+    content: list[Any] = []
     content.append(
         html.H4(
             "\u26a0 Global Summary \u2014 Variables with Differences",
@@ -223,7 +223,7 @@ def build_global_summary(state):
 def build_group_browser(state, group_path):
     """Build group browser view content."""
     gr = find_group_result(state, group_path)
-    content = []
+    content: list[Any] = []
 
     # At root: show a toggle between Summary and Browse views
     if group_path == "/":
@@ -878,7 +878,7 @@ def build_detail_view(state, varpath, zoom_range=None):
     )
 
     # Navigation buttons row
-    nav_buttons = []
+    nav_buttons: list[Any] = []
     nav_buttons.append(
         html.Button(
             "\u2190 Back to group",
@@ -945,7 +945,7 @@ def build_detail_view(state, varpath, zoom_range=None):
             )
         )
 
-    content = [
+    content: list[Any] = [
         html.Div(
             nav_buttons,
             style={

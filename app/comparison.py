@@ -242,12 +242,12 @@ def compare_attributes(
     return results
 
 
-def _apply_mask(data: numpy.ndarray, mask: numpy.ndarray) -> numpy.ma.MaskedArray:
+def _apply_mask(data: numpy.ndarray, mask: numpy.ndarray) -> numpy.ma.MaskedArray:  # type: ignore[type-arg]
     """Apply a boolean mask to data, masking points where mask is False."""
     if isinstance(data, numpy.ma.MaskedArray):
         new_mask = numpy.logical_or(data.mask, ~mask)
-        return numpy.ma.MaskedArray(data.data, mask=new_mask)
-    return numpy.ma.masked_where(~mask, data)
+        return numpy.ma.MaskedArray(data.data, mask=new_mask)  # type: ignore[no-any-return]
+    return numpy.ma.masked_where(~mask, data)  # type: ignore[no-any-return]
 
 
 def compare_variable(
@@ -334,6 +334,7 @@ def compare_variable(
     diff = numpy.abs(src_val - tgt_val)
     stats = Stats.from_array(diff)
 
+    status: Literal["almost_equal", "different"]
     if numpy.allclose(src_val, tgt_val, rtol=0, atol=tol, equal_nan=True):
         status = "almost_equal"
     else:

@@ -142,6 +142,8 @@ class DataSource:
         self.exclusive_nan = bool(numpy.any(exclusive_nan))
 
         # Store NaN distribution data
+        self.full_nan_computed: numpy.ndarray | None
+        self.full_nan_expected: numpy.ndarray | None
         if self.exclusive_nan:
             self.full_nan_computed = numpy.where(
                 exclusive_nan & nan_computed, 0, numpy.nan
@@ -505,7 +507,7 @@ def _navigate_to_variable(dataset: netCDF4.Dataset, varpath: str) -> netCDF4.Var
     return group.variables[parts[-1]]
 
 
-def _apply_mask(data: numpy.ndarray, mask: numpy.ndarray) -> numpy.ma.MaskedArray:
+def _apply_mask(data: numpy.ndarray, mask: numpy.ndarray) -> numpy.ma.MaskedArray:  # type: ignore[type-arg]
     """Apply a boolean mask to data, masking points where mask is False.
 
     Args:
@@ -518,5 +520,5 @@ def _apply_mask(data: numpy.ndarray, mask: numpy.ndarray) -> numpy.ma.MaskedArra
     """
     if isinstance(data, numpy.ma.MaskedArray):
         new_mask = numpy.logical_or(data.mask, ~mask)
-        return numpy.ma.MaskedArray(data.data, mask=new_mask)
-    return numpy.ma.masked_where(~mask, data)
+        return numpy.ma.MaskedArray(data.data, mask=new_mask)  # type: ignore[no-any-return]
+    return numpy.ma.masked_where(~mask, data)  # type: ignore[no-any-return]

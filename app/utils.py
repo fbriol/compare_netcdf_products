@@ -34,7 +34,7 @@ def find_group_result(
 def navigate_to_group(
     dataset: netCDF4.Dataset,
     group_path: str,
-) -> netCDF4.Group | None:
+) -> netCDF4.Dataset | None:
     """Navigate to a NetCDF group by path.
 
     Args:
