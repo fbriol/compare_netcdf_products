@@ -131,7 +131,8 @@ def build_global_summary(state):
                     id="summary-search-input",
                     type="text",
                     placeholder="Filter variables\u2026",
-                    debounce=True,
+                    debounce=False,
+                    list="summary-search-options",
                     style={
                         "marginLeft": "16px",
                         "padding": "4px 10px",
@@ -140,6 +141,10 @@ def build_global_summary(state):
                         "fontSize": "12px",
                         "width": "250px",
                     },
+                ),
+                html.Datalist(
+                    id="summary-search-options",
+                    children=[html.Option(value=v.varpath) for v in problem_vars],
                 ),
             ],
             style={"display": "flex", "alignItems": "center", "marginBottom": "6px"},
@@ -484,7 +489,8 @@ def build_group_browser(state, group_path):
                 )
             )
 
-        # Search field for filtering variables
+        # Search field for filtering variables (with autocomplete)
+        var_names = [v.varpath.rsplit("/", 1)[-1] for v in gr.variables]
         content.append(
             html.Div(
                 [
@@ -493,6 +499,7 @@ def build_group_browser(state, group_path):
                         type="text",
                         placeholder="Search variables...",
                         debounce=False,
+                        list="var-search-options",
                         style={
                             "width": "300px",
                             "padding": "6px 12px",
@@ -501,6 +508,10 @@ def build_group_browser(state, group_path):
                             "fontSize": "12px",
                             "marginBottom": "8px",
                         },
+                    ),
+                    html.Datalist(
+                        id="var-search-options",
+                        children=[html.Option(value=n) for n in sorted(set(var_names))],
                     ),
                 ]
             )
