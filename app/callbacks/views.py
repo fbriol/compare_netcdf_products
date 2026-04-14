@@ -79,18 +79,7 @@ def build_breadcrumb(group_path):
             )
         )
 
-    return html.Div(
-        items,
-        style={
-            "background": "linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%)",
-            "borderRadius": "6px",
-            "padding": "6px 12px",
-            "marginBottom": "12px",
-            "display": "flex",
-            "alignItems": "center",
-            "flexWrap": "wrap",
-        },
-    )
+    return items
 
 
 def get_clickable_varpaths(state):
@@ -208,7 +197,7 @@ def build_global_summary(state):
                                 style={"padding": "8px 12px", "textAlign": "left"},
                             ),
                         ],
-                        style={"backgroundColor": "#1565c0", "color": "white"},
+                        style={"backgroundColor": "rgb(76,114,176)", "color": "white"},
                     )
                 ),
                 html.Tbody(rows, id="summary-table-body"),
@@ -244,13 +233,13 @@ def build_group_browser(state, group_path):
                             n_clicks=0,
                             style={
                                 "border": "none",
-                                "borderBottom": "3px solid #1565c0",
+                                "borderBottom": "3px solid rgb(76,114,176)",
                                 "padding": "8px 20px",
                                 "cursor": "pointer",
                                 "fontSize": "13px",
                                 "fontWeight": "600",
                                 "backgroundColor": "transparent",
-                                "color": "#1565c0",
+                                "color": "rgb(76,114,176)",
                             },
                         ),
                         html.Button(
@@ -357,7 +346,7 @@ def build_group_browser(state, group_path):
                 style={
                     "fontSize": "13px",
                     "padding": "8px 12px",
-                    "background": "#f5f7fa",
+                    "background": "#eaeaf2",
                     "borderRadius": "6px",
                     "marginBottom": "12px",
                 },
@@ -371,9 +360,9 @@ def build_group_browser(state, group_path):
                 f"\U0001f50d {gr.filter_description}",
                 style={
                     "padding": "8px 12px",
-                    "backgroundColor": "#e3f2fd",
+                    "backgroundColor": "rgb(234,234,242)",
                     "borderRadius": "4px",
-                    "color": "#1565c0",
+                    "color": "rgb(76,114,176)",
                     "fontSize": "12px",
                     "marginBottom": "12px",
                 },
@@ -398,7 +387,7 @@ def build_group_browser(state, group_path):
             label = f"\U0001f4c1 {grp_name}"
             if n_d > 0:
                 label += f" ({n_d} diffs)"
-            bg_color = "#fff3cd" if n_d > 0 else "#f5f7fa"
+            bg_color = "#fff3cd" if n_d > 0 else "#eaeaf2"
             border_color = "#ffc107" if n_d > 0 else "#e0e0e0"
             btn_row.append(
                 html.Button(
@@ -460,7 +449,7 @@ def build_group_browser(state, group_path):
                                     style={"padding": "8px 12px", "textAlign": "left"},
                                 ),
                             ],
-                            style={"backgroundColor": "#f5f7fa"},
+                            style={"backgroundColor": "#eaeaf2"},
                         )
                     ),
                     html.Tbody(rows),
@@ -601,7 +590,10 @@ def build_group_browser(state, group_path):
                                         },
                                     ),
                                 ],
-                                style={"backgroundColor": "#1565c0", "color": "white"},
+                                style={
+                                    "backgroundColor": "rgb(76,114,176)",
+                                    "color": "white",
+                                },
                             )
                         ),
                         html.Tbody(var_rows, id="var-table-body"),
@@ -819,6 +811,7 @@ def build_filtered_map(data_source, zoom_range):
 
     fig.update_geos(**geo_kwargs)
     fig.update_layout(
+        template="seaborn",
         height=500,
         margin={"l": 0, "r": 0, "t": 10, "b": 0},
         legend={
@@ -1285,7 +1278,11 @@ def build_detail_view(state, varpath, zoom_range=None):
 
 
 def render_current_view(state, zoom_range=None):
-    """Render the current view (group or detail) based on state."""
+    """Render the current view (group or detail) based on state.
+
+    Returns:
+        Tuple of (breadcrumb_items, main_content_children).
+    """
     if state.current_view == "detail" and state.current_varpath:
         varpath = state.current_varpath
         parent = (
@@ -1295,9 +1292,9 @@ def render_current_view(state, zoom_range=None):
         )
         breadcrumb = build_breadcrumb(parent)
         detail = build_detail_view(state, varpath, zoom_range=zoom_range)
-        return [breadcrumb, *detail]
+        return breadcrumb, detail
     else:
         group_path = state.current_group_path or "/"
         breadcrumb = build_breadcrumb(group_path)
         browser = build_group_browser(state, group_path)
-        return [breadcrumb, *browser]
+        return breadcrumb, browser

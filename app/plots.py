@@ -10,6 +10,13 @@ import plotly.graph_objects as go
 if TYPE_CHECKING:
     from .data_loading import DataSource
 
+# Seaborn-style palette (first colours from the Plotly "seaborn" template)
+_C_SOURCE = "rgb(76,114,176)"  # muted blue
+_C_TARGET = "rgb(196,78,82)"  # muted red
+_C_DIFF = "rgb(85,168,104)"  # muted green
+_C_HIST = "rgb(129,114,179)"  # muted purple
+_TEMPLATE = "seaborn"
+
 
 def fig_signal_comparison(
     varname: str,
@@ -32,7 +39,7 @@ def fig_signal_comparison(
             x=d["x"],
             y=d["expected"],
             mode="markers",
-            marker={"size": 2, "color": "blue"},
+            marker={"size": 2, "color": _C_SOURCE},
             name="Source",
             hovertemplate="index: %{x}<br>source: %{y}<extra></extra>",
         )
@@ -42,12 +49,13 @@ def fig_signal_comparison(
             x=d["x"],
             y=d["computed"],
             mode="markers",
-            marker={"size": 2, "color": "red"},
+            marker={"size": 2, "color": _C_TARGET},
             name="Target",
             hovertemplate="index: %{x}<br>target: %{y}<extra></extra>",
         )
     )
     fig.update_layout(
+        template=_TEMPLATE,
         xaxis_title="Index",
         yaxis_title="Value",
         height=500,
@@ -86,12 +94,13 @@ def fig_signal_difference(
             x=d["x"],
             y=d["difference"],
             mode="markers",
-            marker={"size": 2, "color": "green"},
+            marker={"size": 2, "color": _C_DIFF},
             name="Difference",
             hovertemplate="index: %{x}<br>difference: %{y}<extra></extra>",
         )
     )
     fig.update_layout(
+        template=_TEMPLATE,
         xaxis_title="Index",
         yaxis_title="Source - Target",
         height=400,
@@ -122,7 +131,7 @@ def fig_nan_distribution(
             x=d["x"],
             y=d["nan_expected"],
             mode="markers",
-            marker={"size": 3, "color": "blue", "symbol": "square"},
+            marker={"size": 3, "color": _C_SOURCE, "symbol": "square"},
             name="Only in Source",
             hovertemplate="index: %{x}<extra></extra>",
         )
@@ -132,12 +141,13 @@ def fig_nan_distribution(
             x=d["x"],
             y=d["nan_computed"],
             mode="markers",
-            marker={"size": 3, "color": "red", "symbol": "square"},
+            marker={"size": 3, "color": _C_TARGET, "symbol": "square"},
             name="Only in Target",
             hovertemplate="index: %{x}<extra></extra>",
         )
     )
     fig.update_layout(
+        template=_TEMPLATE,
         xaxis_title="Index",
         yaxis_title="Value",
         height=400,
@@ -181,6 +191,7 @@ def fig_scatter(
         )
     )
     fig.update_layout(
+        template=_TEMPLATE,
         xaxis_title="Target",
         yaxis_title="Source",
         height=500,
@@ -210,11 +221,12 @@ def fig_histogram(
             x=[(lt + rt) / 2 for lt, rt in zip(h["left"], h["right"], strict=False)],
             y=h["top"],
             width=[rt - lt for lt, rt in zip(h["left"], h["right"], strict=False)],
-            marker_color="steelblue",
+            marker_color=_C_HIST,
             hovertemplate="range: %{x}<br>count: %{y}<extra></extra>",
         )
     )
     fig.update_layout(
+        template=_TEMPLATE,
         xaxis_title="Difference",
         yaxis_title="Frequency",
         height=400,
@@ -249,21 +261,22 @@ def fig_stats_table(
             go.Table(
                 header={
                     "values": ["<b>Metric</b>", "<b>Value</b>"],
-                    "fill_color": "#1565c0",
+                    "fill_color": "rgb(76,114,176)",
                     "font": {"color": "white", "size": 12},
                     "align": "left",
                 },
                 cells={
                     "values": [s["metric"], values_formatted],
-                    "fill_color": [["#f5f7fa", "white"] * 3],
+                    "fill_color": [["rgb(234,234,242)", "white"] * 3],
                     "align": "left",
-                    "font": {"size": 12},
+                    "font": {"size": 12, "color": "rgb(36,36,36)"},
                     "height": 28,
                 },
             )
         ]
     )
     fig.update_layout(
+        template=_TEMPLATE,
         height=240,
         margin={"l": 0, "r": 0, "t": 10, "b": 0},
     )
@@ -396,6 +409,7 @@ def fig_geo_map(
     fig.update_geos(**geo_kwargs)
 
     fig.update_layout(
+        template=_TEMPLATE,
         height=500,
         margin={"l": 0, "r": 0, "t": 10, "b": 0},
         legend={

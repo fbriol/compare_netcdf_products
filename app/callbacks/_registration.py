@@ -89,8 +89,8 @@ _STATUS_NONE = {
     "fontSize": "12px",
     "padding": "8px 12px",
     "borderRadius": "4px",
-    "backgroundColor": "#e3f2fd",
-    "color": "#1565c0",
+    "backgroundColor": "rgb(234,234,242)",
+    "color": "rgb(76,114,176)",
 }
 
 _BANNER_ACTIVE = {
@@ -211,6 +211,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
     # ── Main content rendering ─────────────────────────────────────
 
     @app.callback(
+        Output("breadcrumb-bar", "children"),
         Output("main-content", "children"),
         Input("nav-current-view", "data"),
         Input("nav-group-path", "data"),
@@ -350,10 +351,10 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
             var ctx = window.dash_clientside.callback_context;
             if (!ctx || !ctx.triggered || ctx.triggered.length === 0)
                 return [{'display': 'block'}, {'display': 'none'},
-                        {border:'none',borderBottom:'3px solid #1565c0',
+                        {border:'none',borderBottom:'3px solid rgb(76,114,176)',
                          padding:'8px 20px',cursor:'pointer',fontSize:'13px',
                          fontWeight:'600',backgroundColor:'transparent',
-                         color:'#1565c0'},
+                         color:'rgb(76,114,176)'},
                         {border:'none',borderBottom:'3px solid transparent',
                          padding:'8px 20px',cursor:'pointer',fontSize:'13px',
                          fontWeight:'400',backgroundColor:'transparent',
@@ -362,10 +363,10 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
             var tid = ctx.triggered[0].prop_id;
             var showSummary = tid.indexOf('summary') !== -1;
 
-            var activeStyle = {border:'none',borderBottom:'3px solid #1565c0',
+            var activeStyle = {border:'none',borderBottom:'3px solid rgb(76,114,176)',
                 padding:'8px 20px',cursor:'pointer',fontSize:'13px',
                 fontWeight:'600',backgroundColor:'transparent',
-                color:'#1565c0'};
+                color:'rgb(76,114,176)'};
             var inactiveStyle = {border:'none',
                 borderBottom:'3px solid transparent',
                 padding:'8px 20px',cursor:'pointer',fontSize:'13px',
@@ -880,7 +881,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
             "fontSize": "12px",
             "padding": "8px 12px",
             "borderRadius": "4px",
-            "backgroundColor": "#f5f7fa",
+            "backgroundColor": "#eaeaf2",
             "color": "#607d8b",
         }
 
@@ -937,7 +938,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                         "padding": "3px 8px",
                         "border": "1px solid #bbdefb",
                         "borderRadius": "12px",
-                        "backgroundColor": "#e3f2fd",
+                        "backgroundColor": "rgb(234,234,242)",
                         "marginRight": "4px",
                         "marginBottom": "4px",
                     },
@@ -987,6 +988,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         Output("expr-status", "children"),
         Output("expr-status", "style"),
         Output("expr-textarea", "value"),
+        Output("breadcrumb-bar", "children", allow_duplicate=True),
         Output("main-content", "children", allow_duplicate=True),
         Output("filter-banner", "children", allow_duplicate=True),
         Output("filter-banner", "style", allow_duplicate=True),
@@ -996,15 +998,16 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
     )
     def apply_filter(n_clicks, conditions):
         if not n_clicks:
-            return (no_update,) * 6
+            return (no_update,) * 7
         conditions = conditions or []
         if not conditions:
-            return (no_update,) * 6
+            return (no_update,) * 7
 
         raw = _conditions_to_expression(conditions)
         result = _apply_expression_no_nav(state, raw)
         banner = _make_banner(state)
-        return (*result, raw, render_current_view(state), *banner)
+        bc, content = render_current_view(state)
+        return (*result, raw, bc, content, *banner)
 
     # ── Filter: clear all ──────────────────────────────────────────
 
@@ -1013,6 +1016,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         Output("expr-textarea", "value", allow_duplicate=True),
         Output("expr-status", "children", allow_duplicate=True),
         Output("expr-status", "style", allow_duplicate=True),
+        Output("breadcrumb-bar", "children", allow_duplicate=True),
         Output("main-content", "children", allow_duplicate=True),
         Output("filter-banner", "children", allow_duplicate=True),
         Output("filter-banner", "style", allow_duplicate=True),
@@ -1021,18 +1025,20 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
     )
     def clear_filter(n_clicks):
         if not n_clicks:
-            return (no_update,) * 7
+            return (no_update,) * 8
         state.active_mask = None
         state.active_expression = None
         state.filter_info = None
         state.clear_variable_cache()
         state.group_results = scan_all_groups(state.src_ds, state.tgt_ds)
+        bc, content = render_current_view(state)
         return (
             [],
             "",
             "No filter active",
             _STATUS_NONE,
-            render_current_view(state),
+            bc,
+            content,
             *_make_banner(state),
         )
 
@@ -1041,6 +1047,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
     @app.callback(
         Output("expr-status", "children", allow_duplicate=True),
         Output("expr-status", "style", allow_duplicate=True),
+        Output("breadcrumb-bar", "children", allow_duplicate=True),
         Output("main-content", "children", allow_duplicate=True),
         Output("filter-banner", "children", allow_duplicate=True),
         Output("filter-banner", "style", allow_duplicate=True),
@@ -1050,12 +1057,13 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
     )
     def apply_advanced_expression(n_clicks, expr_text):
         if not n_clicks:
-            return (no_update,) * 5
+            return (no_update,) * 6
         raw = (expr_text or "").strip()
         if not raw:
-            return (no_update,) * 5
+            return (no_update,) * 6
         result = _apply_expression_no_nav(state, raw)
-        return (*result, render_current_view(state), *_make_banner(state))
+        bc, content = render_current_view(state)
+        return (*result, bc, content, *_make_banner(state))
 
     # ── Flag filter ────────────────────────────────────────────────
     # Update graph figures directly — no page re-render so the
@@ -1258,7 +1266,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
             "<meta charset='utf-8'>",
             f"<title>Comparison: {varpath}</title>",
             "<style>body{font-family:'Segoe UI',sans-serif;margin:20px;}"
-            "h2{color:#1565c0;}h3{color:#455a64;}</style>",
+            "h2{color:rgb(76,114,176);}h3{color:#455a64;}</style>",
             "</head><body>",
             f"<h2>Comparison: {varpath}</h2>",
             f"<p>{long_name}</p>",
@@ -1322,7 +1330,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         search = "?" + urllib.parse.urlencode(params)
         toast_style = {
             "backgroundColor": "rgba(255,255,255,0.9)",
-            "color": "#1565c0",
+            "color": "rgb(76,114,176)",
             "padding": "4px 10px",
             "borderRadius": "4px",
             "fontSize": "11px",
@@ -1362,6 +1370,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         Output("expr-textarea", "value", allow_duplicate=True),
         Output("expr-status", "children", allow_duplicate=True),
         Output("expr-status", "style", allow_duplicate=True),
+        Output("breadcrumb-bar", "children", allow_duplicate=True),
         Output("main-content", "children", allow_duplicate=True),
         Output("filter-banner", "children", allow_duplicate=True),
         Output("filter-banner", "style", allow_duplicate=True),
@@ -1372,7 +1381,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         prevent_initial_call=True,
     )
     def restore_from_url(search, is_initial):
-        n_out = 12
+        n_out = 13
         if not is_initial or not search:
             return (no_update,) * n_out
         import urllib.parse
@@ -1425,7 +1434,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         restored_zoom = None
         if zoom_range is not no_update:
             restored_zoom = zoom_range
-        content = render_current_view(state, zoom_range=restored_zoom)
+        bc, content = render_current_view(state, zoom_range=restored_zoom)
 
         return (
             view,
@@ -1435,6 +1444,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
             expr_text,
             status_msg,
             status_style,
+            bc,
             content,
             *banner,
             False,

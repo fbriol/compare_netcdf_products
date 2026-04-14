@@ -141,7 +141,7 @@ def build_file_info(state: SessionState) -> html.Div:
                         "Source",
                         style={
                             "fontSize": "11px",
-                            "color": "#1565c0",
+                            "color": "rgb(76,114,176)",
                             "textTransform": "uppercase",
                             "fontWeight": "600",
                             "letterSpacing": "0.5px",
@@ -158,7 +158,7 @@ def build_file_info(state: SessionState) -> html.Div:
                     ),
                 ],
                 style={
-                    "background": "linear-gradient(135deg, #e3f2fd, #bbdefb)",
+                    "background": "linear-gradient(135deg, #dde3f0, #c6d0e8)",
                     "borderRadius": "8px",
                     "padding": "10px 14px",
                     "marginBottom": "4px",
@@ -170,7 +170,7 @@ def build_file_info(state: SessionState) -> html.Div:
                         "Target",
                         style={
                             "fontSize": "11px",
-                            "color": "#c62828",
+                            "color": "rgb(196,78,82)",
                             "textTransform": "uppercase",
                             "fontWeight": "600",
                             "letterSpacing": "0.5px",
@@ -187,7 +187,7 @@ def build_file_info(state: SessionState) -> html.Div:
                     ),
                 ],
                 style={
-                    "background": "linear-gradient(135deg, #fce4ec, #f8bbd0)",
+                    "background": "linear-gradient(135deg, #f5dde0, #ecc5ca)",
                     "borderRadius": "8px",
                     "padding": "10px 14px",
                 },
@@ -196,7 +196,7 @@ def build_file_info(state: SessionState) -> html.Div:
     )
 
 
-def _btn_style(bg: str = "#1565c0") -> dict:
+def _btn_style(bg: str = "rgb(76,114,176)") -> dict:
     """Return a standard small button style."""
     return {
         "backgroundColor": bg,
@@ -341,7 +341,7 @@ def build_expression_panel(state: SessionState) -> html.Div:
                     "fontSize": "12px",
                     "padding": "8px 12px",
                     "borderRadius": "4px",
-                    "backgroundColor": "#f5f7fa",
+                    "backgroundColor": "#eaeaf2",
                     "color": "#607d8b",
                     "marginBottom": "10px",
                 },
@@ -353,7 +353,7 @@ def build_expression_panel(state: SessionState) -> html.Div:
                         "Apply",
                         id="filter-apply-btn",
                         n_clicks=0,
-                        style=_btn_style("#1565c0"),
+                        style=_btn_style("rgb(76,114,176)"),
                     ),
                     html.Button(
                         "Clear all",
@@ -372,8 +372,8 @@ def build_expression_panel(state: SessionState) -> html.Div:
                     "fontSize": "12px",
                     "padding": "8px 12px",
                     "borderRadius": "4px",
-                    "backgroundColor": "#e3f2fd",
-                    "color": "#1565c0",
+                    "backgroundColor": "rgb(234,234,242)",
+                    "color": "rgb(76,114,176)",
                 },
             ),
             # ── Advanced mode toggle ───────────────────────────────────
@@ -444,7 +444,10 @@ def build_expression_panel(state: SessionState) -> html.Div:
                                 "Apply expression",
                                 id="expr-apply-btn",
                                 n_clicks=0,
-                                style={**_btn_style("#1565c0"), "marginTop": "6px"},
+                                style={
+                                    **_btn_style("rgb(76,114,176)"),
+                                    "marginTop": "6px",
+                                },
                             ),
                         ]
                     ),
@@ -474,87 +477,6 @@ def create_layout(state: SessionState) -> html.Div:
             dcc.Store(id="zoom-range", data=None),
             dcc.Store(id="url-initial-load", data=True),
             dcc.Location(id="url-location", refresh=False),
-            # ── Header ─────────────────────────────────────────────────
-            html.Div(
-                [
-                    html.Div(
-                        [
-                            html.Button(
-                                "\u2630",
-                                id="sidebar-toggle-btn",
-                                n_clicks=0,
-                                style={
-                                    "background": "none",
-                                    "border": "1px solid rgba(255,255,255,0.5)",
-                                    "borderRadius": "4px",
-                                    "color": "white",
-                                    "fontSize": "18px",
-                                    "cursor": "pointer",
-                                    "padding": "2px 8px",
-                                    "marginRight": "12px",
-                                    "lineHeight": "1",
-                                },
-                            ),
-                            html.Span(
-                                state.src_path.name,
-                                style={
-                                    "color": "white",
-                                    "fontWeight": "500",
-                                    "fontSize": "14px",
-                                },
-                            ),
-                            html.Span(
-                                " vs ",
-                                style={
-                                    "color": "rgba(255,255,255,0.6)",
-                                    "fontSize": "13px",
-                                    "margin": "0 6px",
-                                },
-                            ),
-                            html.Span(
-                                state.tgt_path.name,
-                                style={
-                                    "color": "white",
-                                    "fontWeight": "500",
-                                    "fontSize": "14px",
-                                },
-                            ),
-                        ],
-                        style={"display": "flex", "alignItems": "center"},
-                    ),
-                    html.Div(
-                        [
-                            html.Div(id="filter-banner", style={"display": "none"}),
-                            html.Button(
-                                "\U0001f517 Share",
-                                id="share-btn",
-                                n_clicks=0,
-                                style={
-                                    "border": "1px solid rgba(255,255,255,0.5)",
-                                    "borderRadius": "4px",
-                                    "padding": "4px 12px",
-                                    "backgroundColor": "transparent",
-                                    "color": "white",
-                                    "cursor": "pointer",
-                                    "fontSize": "12px",
-                                    "marginLeft": "8px",
-                                    "whiteSpace": "nowrap",
-                                },
-                            ),
-                            html.Div(id="share-toast", style={"display": "none"}),
-                        ],
-                        style={"display": "flex", "alignItems": "center", "gap": "8px"},
-                    ),
-                ],
-                style={
-                    "backgroundColor": "#1565c0",
-                    "padding": "12px 24px",
-                    "boxShadow": "0 2px 4px rgba(0,0,0,0.1)",
-                    "display": "flex",
-                    "alignItems": "center",
-                    "justifyContent": "space-between",
-                },
-            ),
             # ── Body: sidebar + main ───────────────────────────────────
             html.Div(
                 [
@@ -570,7 +492,7 @@ def create_layout(state: SessionState) -> html.Div:
                                 n_clicks=0,
                                 style={
                                     "width": "100%",
-                                    "backgroundColor": "#4caf50",
+                                    "backgroundColor": "rgb(85,168,104)",
                                     "color": "white",
                                     "border": "none",
                                     "borderRadius": "4px",
@@ -589,29 +511,112 @@ def create_layout(state: SessionState) -> html.Div:
                             "width": "380px",
                             "minWidth": "380px",
                             "padding": "16px",
-                            "backgroundColor": "#fafafa",
-                            "borderRight": "1px solid #e0e0e0",
+                            "backgroundColor": "rgb(234,234,242)",
+                            "borderRight": "1px solid #ccc",
                             "overflowY": "auto",
-                            "height": "calc(100vh - 52px)",
+                            "height": "100vh",
                             "transition": "margin-left 0.3s ease, opacity 0.3s ease",
                         },
                     ),
                     # Main content area
                     html.Div(
-                        id="main-content",
+                        [
+                            # Navigation bar: hamburger | breadcrumb | banner + share
+                            html.Div(
+                                [
+                                    # Left: hamburger
+                                    html.Button(
+                                        "\u2630",
+                                        id="sidebar-toggle-btn",
+                                        n_clicks=0,
+                                        style={
+                                            "background": "none",
+                                            "border": "1px solid #ccc",
+                                            "borderRadius": "4px",
+                                            "color": "rgb(76,114,176)",
+                                            "fontSize": "16px",
+                                            "cursor": "pointer",
+                                            "padding": "2px 8px",
+                                            "lineHeight": "1",
+                                            "flexShrink": "0",
+                                        },
+                                    ),
+                                    # Centre: breadcrumb (filled by callback)
+                                    html.Div(
+                                        id="breadcrumb-bar",
+                                        style={
+                                            "flex": "1",
+                                            "display": "flex",
+                                            "alignItems": "center",
+                                            "flexWrap": "wrap",
+                                            "minWidth": "0",
+                                        },
+                                    ),
+                                    # Right: filter banner + share
+                                    html.Div(
+                                        [
+                                            html.Div(
+                                                id="filter-banner",
+                                                style={"display": "none"},
+                                            ),
+                                            html.Button(
+                                                "\U0001f517 Share",
+                                                id="share-btn",
+                                                n_clicks=0,
+                                                style={
+                                                    "border": "1px solid #ccc",
+                                                    "borderRadius": "4px",
+                                                    "padding": "4px 10px",
+                                                    "backgroundColor": "transparent",
+                                                    "color": "rgb(76,114,176)",
+                                                    "cursor": "pointer",
+                                                    "fontSize": "11px",
+                                                    "whiteSpace": "nowrap",
+                                                },
+                                            ),
+                                            html.Div(
+                                                id="share-toast",
+                                                style={"display": "none"},
+                                            ),
+                                        ],
+                                        style={
+                                            "display": "flex",
+                                            "alignItems": "center",
+                                            "gap": "6px",
+                                            "flexShrink": "0",
+                                        },
+                                    ),
+                                ],
+                                style={
+                                    "display": "flex",
+                                    "alignItems": "center",
+                                    "gap": "8px",
+                                    "background": "linear-gradient(135deg,"
+                                    " #eaeaf2 0%, #e8ecf1 100%)",
+                                    "borderRadius": "6px",
+                                    "padding": "6px 12px",
+                                    "marginBottom": "12px",
+                                },
+                            ),
+                            html.Div(id="main-content"),
+                        ],
                         style={
                             "flex": "1",
                             "padding": "16px 24px",
                             "overflowY": "auto",
-                            "height": "calc(100vh - 52px)",
+                            "height": "100vh",
                         },
                     ),
                 ],
                 style={
                     "display": "flex",
-                    "height": "calc(100vh - 52px)",
+                    "height": "100vh",
                 },
             ),
         ],
-        style={"fontFamily": "'Segoe UI', Roboto, sans-serif"},
+        style={
+            "fontFamily": "'Segoe UI', Roboto, sans-serif",
+            "backgroundColor": "#f0f0f5",
+            "color": "rgb(36,36,36)",
+        },
     )
