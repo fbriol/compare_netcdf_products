@@ -691,27 +691,57 @@ def get_map_arrays(data_source):
 
 
 def build_filtered_map(data_source, zoom_range):
-    """Build a Scattergeo figure filtered by zoom_range."""
-    arrays = get_map_arrays(data_source)
-    if arrays is None:
-        return None
+    """Build a Scattergeo figure filtered by zoom_range.
 
-    lon = arrays["lon"]
-    lat = arrays["lat"]
-    expected = arrays["expected"]
-    computed = arrays["computed"]
-    x = arrays["x"]
-    all_valid = arrays["all_valid"]
-    all_lon = arrays["all_lon"]
-    all_lat = arrays["all_lat"]
+    When a zoom is active, full-resolution data within the zoom window
+    is used (downsampled to _MAX_MAP points) so the map stays consistent
+    with the 1-D plots.
+    """
+    _MAX_MAP = 5_000
 
     has_zoom = zoom_range and not zoom_range.get("auto")
 
     if has_zoom:
+        # Use full-resolution data within zoom window
+        if (
+            not hasattr(data_source, "full_longitude")
+            or data_source.full_longitude is None
+        ):
+            return None
         xmin = float(zoom_range["min"])
         xmax = float(zoom_range["max"])
-        mask = (x >= xmin) & (x <= xmax) & all_valid
+        x_full = data_source.full_x
+        win = (x_full >= xmin) & (x_full <= xmax)
+        x = x_full[win]
+        lon = numpy.asarray(data_source.full_longitude[win], dtype=float)
+        lat = numpy.asarray(data_source.full_latitude[win], dtype=float)
+        expected = data_source.full_expected[win]
+        computed = data_source.full_computed[win]
+        # Downsample for map performance
+        n = len(lon)
+        if n > _MAX_MAP:
+            step = max(1, n // _MAX_MAP)
+            idx = numpy.arange(0, n, step)
+            lon, lat = lon[idx], lat[idx]
+            expected, computed, x = expected[idx], computed[idx], x[idx]
+        all_valid = ~(numpy.isnan(lon) | numpy.isnan(lat))
+        mask = all_valid
+        # Background track from global cache
+        bg_arrays = get_map_arrays(data_source)
+        all_lon = bg_arrays["all_lon"] if bg_arrays else lon[all_valid]
+        all_lat = bg_arrays["all_lat"] if bg_arrays else lat[all_valid]
     else:
+        arrays = get_map_arrays(data_source)
+        if arrays is None:
+            return None
+        lon = arrays["lon"]
+        lat = arrays["lat"]
+        expected = arrays["expected"]
+        computed = arrays["computed"]
+        x = arrays["x"]
+        all_valid = arrays["all_valid"]
+        all_lon = arrays["all_lon"]
+        all_lat = arrays["all_lat"]
         mask = all_valid
 
     lon_f = lon[mask]

@@ -68,7 +68,7 @@ def fig_signal_comparison(
             "x": 0,
             "itemsizing": "constant",
         },
-        xaxis={"rangeslider": {"visible": True, "thickness": 0.05}},
+        yaxis_fixedrange=False,
     )
     return fig
 
@@ -103,6 +103,7 @@ def fig_signal_difference(
         template=_TEMPLATE,
         xaxis_title="Index",
         yaxis_title="Source - Target",
+        yaxis_fixedrange=False,
         height=400,
         margin={"l": 60, "r": 20, "t": 10, "b": 40},
         showlegend=False,
@@ -150,6 +151,7 @@ def fig_nan_distribution(
         template=_TEMPLATE,
         xaxis_title="Index",
         yaxis_title="Value",
+        yaxis_fixedrange=False,
         height=400,
         margin={"l": 60, "r": 20, "t": 10, "b": 40},
         legend={

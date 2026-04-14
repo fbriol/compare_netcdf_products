@@ -500,13 +500,34 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         State("outlier-stats", "data"),
         State("nav-varpath", "data"),
         State({"type": "plot-graph", "label": ALL}, "id"),
+        State("marker-size-slider", "value"),
+        State("zoom-range", "data"),
         prevent_initial_call=True,
     )
-    def update_outliers(n_sigma, stats, varpath, graph_ids):
+    def update_outliers(
+        n_sigma,
+        stats,
+        varpath,
+        graph_ids,
+        marker_size,
+        zoom_range,
+    ):
         if not stats or not n_sigma or not varpath or not graph_ids:
             return ([no_update] * len(graph_ids), no_update, no_update)
 
         data_source = load_variable_data(state, varpath)
+        msize = marker_size or 2
+
+        # Use zoomed data if a zoom is active
+        has_zoom = zoom_range and not zoom_range.get("auto")
+        if has_zoom:
+            zd = data_source.get_zoomed_source_data(
+                float(zoom_range["min"]), float(zoom_range["max"])
+            )
+        else:
+            zd = data_source.source_data
+
+        # Compute outlier mask on full display data
         d = data_source.source_data
         diff_arr = numpy.asarray(d["difference"], dtype=float)
         x_arr = numpy.asarray(d["x"])
@@ -519,22 +540,28 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         outlier_mask = numpy.abs(diff_arr - mean) > threshold
         n_outliers = int(numpy.nansum(outlier_mask))
 
-        # Find long_name
-        long_name = varpath
-        for gr in state.group_results:
-            for v in gr.variables:
-                if v.varpath == varpath:
-                    long_name = v.long_name
-                    break
-
-        # Rebuild Signal Comparison and Signal Difference figures
-        # with the new outlier threshold
-        from ..plots import fig_signal_comparison, fig_signal_difference
-
-        new_sig_comp = fig_signal_comparison(long_name, data_source)
-        new_sig_diff = fig_signal_difference(long_name, data_source)
-
-        # Add outlier traces
+        # Build Signal Comparison figure
+        new_sig_comp = go.Figure()
+        new_sig_comp.add_trace(
+            go.Scattergl(
+                x=zd["x"],
+                y=zd["expected"],
+                mode="markers",
+                marker={"size": msize, "color": "rgb(76,114,176)"},
+                name="Source",
+                hovertemplate="index: %{x}<br>source: %{y}<extra></extra>",
+            )
+        )
+        new_sig_comp.add_trace(
+            go.Scattergl(
+                x=zd["x"],
+                y=zd["computed"],
+                mode="markers",
+                marker={"size": msize, "color": "rgb(196,78,82)"},
+                name="Target",
+                hovertemplate="index: %{x}<br>target: %{y}<extra></extra>",
+            )
+        )
         if numpy.any(outlier_mask):
             new_sig_comp.add_trace(
                 go.Scattergl(
@@ -548,9 +575,8 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                         "line": {"width": 1, "color": "red"},
                     },
                     name="Source (outlier)",
-                    hovertemplate=(
-                        "index: %{x}<br>source: %{y}<br><b>OUTLIER</b><extra></extra>"
-                    ),
+                    hovertemplate="index: %{x}<br>source: %{y}"
+                    "<br><b>OUTLIER</b><extra></extra>",
                 )
             )
             new_sig_comp.add_trace(
@@ -565,11 +591,44 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                         "line": {"width": 1, "color": "red"},
                     },
                     name="Target (outlier)",
-                    hovertemplate=(
-                        "index: %{x}<br>target: %{y}<br><b>OUTLIER</b><extra></extra>"
-                    ),
+                    hovertemplate="index: %{x}<br>target: %{y}"
+                    "<br><b>OUTLIER</b><extra></extra>",
                 )
             )
+        new_sig_comp.update_layout(
+            template="seaborn",
+            xaxis_title="Index",
+            yaxis_title="Value",
+            height=500,
+            margin={"l": 60, "r": 20, "t": 10, "b": 40},
+            legend={
+                "orientation": "h",
+                "yanchor": "bottom",
+                "y": 1.02,
+                "xanchor": "left",
+                "x": 0,
+                "itemsizing": "constant",
+            },
+            yaxis_fixedrange=False,
+        )
+        if has_zoom:
+            new_sig_comp.update_layout(
+                xaxis_range=[zoom_range["min"], zoom_range["max"]]
+            )
+
+        # Build Signal Difference figure
+        new_sig_diff = go.Figure()
+        new_sig_diff.add_trace(
+            go.Scattergl(
+                x=zd["x"],
+                y=zd["difference"],
+                mode="markers",
+                marker={"size": msize, "color": "rgb(85,168,104)"},
+                name="Difference",
+                hovertemplate="index: %{x}<br>difference: %{y}<extra></extra>",
+            )
+        )
+        if numpy.any(outlier_mask):
             new_sig_diff.add_trace(
                 go.Scattergl(
                     x=x_arr[outlier_mask],
@@ -582,12 +641,31 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                         "line": {"width": 1, "color": "red"},
                     },
                     name="Outlier",
-                    hovertemplate=(
-                        "index: %{x}<br>difference: %{y}<br>"
-                        "<b>OUTLIER</b><extra></extra>"
-                    ),
+                    hovertemplate="index: %{x}<br>difference: %{y}"
+                    "<br><b>OUTLIER</b><extra></extra>",
                 )
             )
+        new_sig_diff.update_layout(
+            template="seaborn",
+            xaxis_title="Index",
+            yaxis_title="Source - Target",
+            yaxis_fixedrange=False,
+            height=400,
+            margin={"l": 60, "r": 20, "t": 10, "b": 40},
+            showlegend=False,
+        )
+        if has_zoom:
+            new_sig_diff.update_layout(
+                xaxis_range=[zoom_range["min"], zoom_range["max"]]
+            )
+
+        # Re-apply Y-axis zoom if stored
+        if zoom_range and zoom_range.get("ymin") is not None:
+            for f in (new_sig_comp, new_sig_diff):
+                f.update_layout(
+                    yaxis_range=[zoom_range["ymin"], zoom_range["ymax"]],
+                    yaxis_autorange=False,
+                )
 
         # Build results matching graph_ids order
         fig_map = {
@@ -698,6 +776,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                         if (!isIndexGraph(gd)) return;
 
                         var xRange = null;
+                        var yRange = null;
                         var autorange = false;
                         if (ed['xaxis.range[0]'] !== undefined) {
                             xRange = [ed['xaxis.range[0]'],
@@ -706,9 +785,18 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                             xRange = ed['xaxis.range'];
                         } else if (ed['xaxis.autorange']) {
                             autorange = true;
-                        } else {
-                            return;
                         }
+
+                        // Capture Y-axis range
+                        if (ed['yaxis.range[0]'] !== undefined) {
+                            yRange = [ed['yaxis.range[0]'],
+                                      ed['yaxis.range[1]']];
+                        } else if (ed['yaxis.range'] !== undefined) {
+                            yRange = ed['yaxis.range'];
+                        }
+
+                        // Need at least an X or Y change
+                        if (!xRange && !autorange && !yRange) return;
 
                         window._zoomSyncing = true;
                         document.querySelectorAll('.js-plotly-plot')
@@ -719,7 +807,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                                     if (autorange) {
                                         Plotly.relayout(other,
                                             {'xaxis.autorange': true});
-                                    } else {
+                                    } else if (xRange) {
                                         Plotly.relayout(other, {
                                             'xaxis.range[0]': xRange[0],
                                             'xaxis.range[1]': xRange[1]
@@ -731,12 +819,21 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                             window._zoomSyncing = false;
                         }, 300);
 
-                        // Store for server-side access
+                        // Store for server-side access (X + Y)
                         if (autorange) {
                             window._lastZoomRange = {auto: true};
                         } else {
-                            window._lastZoomRange = {
-                                min: xRange[0], max: xRange[1]};
+                            var stored = window._lastZoomRange || {};
+                            if (xRange) {
+                                stored.min = xRange[0];
+                                stored.max = xRange[1];
+                                stored.auto = false;
+                            }
+                            if (yRange) {
+                                stored.ymin = yRange[0];
+                                stored.ymax = yRange[1];
+                            }
+                            window._lastZoomRange = stored;
                         }
                     });
                 });
@@ -796,6 +893,259 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         data_source = load_variable_data(state, varpath)
         fig = build_filtered_map(data_source, zoom_range)
         return fig if fig is not None else no_update
+
+    # ── Zoom: re-downsample index-based plots ─────────────────────
+    # When the user zooms tightly, the global LTTB downsampling may
+    # leave very few points in the visible range, creating gaps.
+    # This callback re-applies LTTB on the zoomed window so that up
+    # to MAX_DISPLAY_POINTS are always displayed.
+
+    _INDEX_LABELS = {
+        "Signal Comparison",
+        "Signal Difference",
+        "Exclusive Undefined Positions",
+    }
+
+    @app.callback(
+        Output({"type": "plot-graph", "label": ALL}, "figure", allow_duplicate=True),
+        Input("zoom-range", "data"),
+        State("nav-varpath", "data"),
+        State({"type": "plot-graph", "label": ALL}, "id"),
+        State("marker-size-slider", "value"),
+        State("outlier-sigma-slider", "value"),
+        prevent_initial_call=True,
+    )
+    def resample_on_zoom(
+        zoom_range,
+        varpath,
+        graph_ids,
+        marker_size,
+        n_sigma,
+    ):
+        if not varpath:
+            return [no_update] * len(graph_ids)
+
+        data_source = load_variable_data(state, varpath)
+        has_zoom = zoom_range and not zoom_range.get("auto")
+        msize = marker_size or 2
+        sigma = n_sigma or 3
+
+        if has_zoom:
+            zd = data_source.get_zoomed_source_data(
+                float(zoom_range["min"]), float(zoom_range["max"])
+            )
+        else:
+            # Reset to global downsampled view
+            zd = data_source.source_data
+
+        # Pre-compute outlier mask using full data and current sigma
+        d_full = data_source.source_data
+        diff_arr = numpy.asarray(d_full["difference"], dtype=float)
+        valid_diff = diff_arr[~numpy.isnan(diff_arr)]
+        has_outliers = len(valid_diff) > 0
+        if has_outliers:
+            o_mean = float(numpy.mean(valid_diff))
+            o_std = float(numpy.std(valid_diff))
+            x_full = numpy.asarray(d_full["x"])
+            o_mask = numpy.abs(diff_arr - o_mean) > (sigma * o_std)
+
+        figures = []
+        for gid in graph_ids:
+            label = gid["label"]
+            if label not in _INDEX_LABELS:
+                figures.append(no_update)
+                continue
+
+            if label == "Signal Comparison":
+                fig = go.Figure()
+                fig.add_trace(
+                    go.Scattergl(
+                        x=zd["x"],
+                        y=zd["expected"],
+                        mode="markers",
+                        marker={"size": msize, "color": "rgb(76,114,176)"},
+                        name="Source",
+                        hovertemplate="index: %{x}<br>source: %{y}<extra></extra>",
+                    )
+                )
+                fig.add_trace(
+                    go.Scattergl(
+                        x=zd["x"],
+                        y=zd["computed"],
+                        mode="markers",
+                        marker={"size": msize, "color": "rgb(196,78,82)"},
+                        name="Target",
+                        hovertemplate="index: %{x}<br>target: %{y}<extra></extra>",
+                    )
+                )
+                # Outlier traces
+                if has_outliers:
+                    exp_full = numpy.asarray(d_full["expected"], dtype=float)
+                    comp_full = numpy.asarray(d_full["computed"], dtype=float)
+                    fig.add_trace(
+                        go.Scattergl(
+                            x=x_full[o_mask],
+                            y=exp_full[o_mask],
+                            mode="markers",
+                            marker={
+                                "size": 6,
+                                "color": "orange",
+                                "symbol": "diamond",
+                                "line": {"width": 1, "color": "red"},
+                            },
+                            name="Source (outlier)",
+                            hovertemplate="index: %{x}<br>source: %{y}"
+                            "<br><b>OUTLIER</b><extra></extra>",
+                        )
+                    )
+                    fig.add_trace(
+                        go.Scattergl(
+                            x=x_full[o_mask],
+                            y=comp_full[o_mask],
+                            mode="markers",
+                            marker={
+                                "size": 6,
+                                "color": "yellow",
+                                "symbol": "diamond",
+                                "line": {"width": 1, "color": "red"},
+                            },
+                            name="Target (outlier)",
+                            hovertemplate="index: %{x}<br>target: %{y}"
+                            "<br><b>OUTLIER</b><extra></extra>",
+                        )
+                    )
+                fig.update_layout(
+                    template="seaborn",
+                    xaxis_title="Index",
+                    yaxis_title="Value",
+                    height=500,
+                    margin={"l": 60, "r": 20, "t": 10, "b": 40},
+                    legend={
+                        "orientation": "h",
+                        "yanchor": "bottom",
+                        "y": 1.02,
+                        "xanchor": "left",
+                        "x": 0,
+                        "itemsizing": "constant",
+                    },
+                    yaxis_fixedrange=False,
+                )
+                if has_zoom:
+                    fig.update_layout(
+                        xaxis_range=[zoom_range["min"], zoom_range["max"]]
+                    )
+
+            elif label == "Signal Difference":
+                fig = go.Figure()
+                fig.add_trace(
+                    go.Scattergl(
+                        x=zd["x"],
+                        y=zd["difference"],
+                        mode="markers",
+                        marker={"size": msize, "color": "rgb(85,168,104)"},
+                        name="Difference",
+                        hovertemplate="index: %{x}<br>difference: %{y}<extra></extra>",
+                    )
+                )
+                # Outlier trace
+                if has_outliers:
+                    fig.add_trace(
+                        go.Scattergl(
+                            x=x_full[o_mask],
+                            y=diff_arr[o_mask],
+                            mode="markers",
+                            marker={
+                                "size": 6,
+                                "color": "orange",
+                                "symbol": "diamond",
+                                "line": {"width": 1, "color": "red"},
+                            },
+                            name="Outlier",
+                            hovertemplate="index: %{x}<br>difference: %{y}"
+                            "<br><b>OUTLIER</b><extra></extra>",
+                        )
+                    )
+                fig.update_layout(
+                    template="seaborn",
+                    xaxis_title="Index",
+                    yaxis_title="Source - Target",
+                    yaxis_fixedrange=False,
+                    height=400,
+                    margin={"l": 60, "r": 20, "t": 10, "b": 40},
+                    showlegend=False,
+                )
+                if has_zoom:
+                    fig.update_layout(
+                        xaxis_range=[zoom_range["min"], zoom_range["max"]]
+                    )
+
+            elif label == "Exclusive Undefined Positions":
+                if "nan_computed" not in zd:
+                    figures.append(no_update)
+                    continue
+                fig = go.Figure()
+                fig.add_trace(
+                    go.Scattergl(
+                        x=zd["x"],
+                        y=zd["nan_expected"],
+                        mode="markers",
+                        marker={
+                            "size": 3,
+                            "color": "rgb(76,114,176)",
+                            "symbol": "square",
+                        },
+                        name="Only in Source",
+                        hovertemplate="index: %{x}<extra></extra>",
+                    )
+                )
+                fig.add_trace(
+                    go.Scattergl(
+                        x=zd["x"],
+                        y=zd["nan_computed"],
+                        mode="markers",
+                        marker={
+                            "size": 3,
+                            "color": "rgb(196,78,82)",
+                            "symbol": "square",
+                        },
+                        name="Only in Target",
+                        hovertemplate="index: %{x}<extra></extra>",
+                    )
+                )
+                fig.update_layout(
+                    template="seaborn",
+                    xaxis_title="Index",
+                    yaxis_title="Value",
+                    yaxis_fixedrange=False,
+                    height=400,
+                    margin={"l": 60, "r": 20, "t": 10, "b": 40},
+                    legend={
+                        "orientation": "h",
+                        "yanchor": "bottom",
+                        "y": 1.02,
+                        "xanchor": "left",
+                        "x": 0,
+                        "itemsizing": "constant",
+                    },
+                )
+                if has_zoom:
+                    fig.update_layout(
+                        xaxis_range=[zoom_range["min"], zoom_range["max"]]
+                    )
+            else:
+                figures.append(no_update)
+                continue
+
+            # Re-apply Y-axis zoom if stored
+            if zoom_range and zoom_range.get("ymin") is not None:
+                fig.update_layout(
+                    yaxis_range=[zoom_range["ymin"], zoom_range["ymax"]],
+                    yaxis_autorange=False,
+                )
+
+            figures.append(fig)
+
+        return figures
 
     # ── Filter: variable hint (show min/max) ─────────────────────
 
