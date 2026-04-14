@@ -71,7 +71,12 @@ def count_diffs(state: SessionState, group_path: str) -> tuple[int, int]:
     gr = find_group_result(state, group_path)
     if gr is None:
         return 0, 0
-    n_diff = sum(1 for v in gr.variables if v.status in ("different", "almost_equal"))
+    n_diff = sum(
+        1
+        for v in gr.variables
+        if v.status
+        in ("different", "almost_equal", "missing_in_target", "missing_in_source")
+    )
     return n_diff, len(gr.variables)
 
 

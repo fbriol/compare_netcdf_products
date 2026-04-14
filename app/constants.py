@@ -8,7 +8,8 @@ STATUS_COLORS = {
     "almost_equal": "#006400",
     "different": "#ffa500",
     "masked": "#d3d3d3",
-    "missing": "#d3d3d3",
+    "missing_in_target": "#e57373",
+    "missing_in_source": "#7986cb",
 }
 
 #: Text colors for the comparison table (white on dark backgrounds).
@@ -17,7 +18,8 @@ STATUS_TEXT_COLORS = {
     "almost_equal": "#ffffff",
     "different": "#000000",
     "masked": "#000000",
-    "missing": "#000000",
+    "missing_in_target": "#ffffff",
+    "missing_in_source": "#ffffff",
 }
 
 #: Maximum number of points to display in scatter plots before downsampling.
@@ -32,5 +34,6 @@ LEGEND_DATA = [
     ("Values are almost equal (within tolerance)", "almost_equal"),
     ("Values are different", "different"),
     ("Values are all masked (no data)", "masked"),
-    ("Variable missing in one file", "missing"),
+    ("Variable missing in target file", "missing_in_target"),
+    ("Variable missing in source file", "missing_in_source"),
 ]

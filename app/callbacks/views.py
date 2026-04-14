@@ -304,6 +304,8 @@ def build_group_browser(state, group_path):
     n_eq = sum(1 for v in gr.variables if v.status == "equal")
     n_aeq = sum(1 for v in gr.variables if v.status == "almost_equal")
     n_masked = sum(1 for v in gr.variables if v.status == "masked")
+    n_miss_tgt = sum(1 for v in gr.variables if v.status == "missing_in_target")
+    n_miss_src = sum(1 for v in gr.variables if v.status == "missing_in_source")
 
     summary_parts = []
     if n_eq:
@@ -321,6 +323,20 @@ def build_group_browser(state, group_path):
     if n_masked:
         summary_parts.append(
             html.Span(f"\u2014 {n_masked} masked", style={"color": "#757575"})
+        )
+    if n_miss_tgt:
+        summary_parts.append(
+            html.Span(
+                f"\u2716 {n_miss_tgt} missing in target",
+                style={"color": "#c62828"},
+            )
+        )
+    if n_miss_src:
+        summary_parts.append(
+            html.Span(
+                f"\u2716 {n_miss_src} missing in source",
+                style={"color": "#3949ab"},
+            )
         )
 
     if summary_parts:
@@ -963,62 +979,32 @@ def build_detail_view(state, varpath, zoom_range=None):
         ),
     ]
 
-    # Plot visibility toggles + marker size control
+    # Plot visibility toggles
     plot_labels = [label for label, _ in plot_configs]
     content.append(
         html.Div(
             [
-                html.Div(
-                    [
-                        html.Span(
-                            "Visible plots:",
-                            style={
-                                "fontSize": "12px",
-                                "color": "#607d8b",
-                                "fontWeight": "600",
-                                "marginRight": "8px",
-                            },
-                        ),
-                        dcc.Checklist(
-                            id="plot-visibility",
-                            options=[
-                                {"label": f" {lbl}", "value": lbl}
-                                for lbl in plot_labels
-                            ],
-                            value=["Signal Comparison"],
-                            inline=True,
-                            style={
-                                "fontSize": "12px",
-                                "display": "inline-flex",
-                                "gap": "12px",
-                                "flexWrap": "wrap",
-                            },
-                            inputStyle={"marginRight": "4px"},
-                        ),
-                    ],
-                    style={"flex": "1"},
+                html.Span(
+                    "Visible plots:",
+                    style={
+                        "fontSize": "12px",
+                        "color": "#607d8b",
+                        "fontWeight": "600",
+                        "marginRight": "8px",
+                    },
                 ),
-                html.Div(
-                    [
-                        html.Span(
-                            "Marker size:",
-                            style={
-                                "fontSize": "12px",
-                                "color": "#607d8b",
-                                "fontWeight": "600",
-                                "marginRight": "8px",
-                            },
-                        ),
-                        dcc.Slider(
-                            id="marker-size-slider",
-                            min=1,
-                            max=10,
-                            step=1,
-                            value=2,
-                            marks={i: str(i) for i in range(1, 11)},
-                        ),
-                    ],
-                    style={"width": "300px"},
+                dcc.Checklist(
+                    id="plot-visibility",
+                    options=[{"label": f" {lbl}", "value": lbl} for lbl in plot_labels],
+                    value=["Signal Comparison"],
+                    inline=True,
+                    style={
+                        "fontSize": "12px",
+                        "display": "inline-flex",
+                        "gap": "12px",
+                        "flexWrap": "wrap",
+                    },
+                    inputStyle={"marginRight": "4px"},
                 ),
             ],
             style={
@@ -1028,9 +1014,9 @@ def build_detail_view(state, varpath, zoom_range=None):
                 "border": "1px solid #e0e0e0",
                 "borderRadius": "8px",
                 "backgroundColor": "#ffffff",
-                "marginBottom": "12px",
+                "marginBottom": "8px",
                 "flexWrap": "wrap",
-                "gap": "12px",
+                "gap": "8px",
             },
         )
     )
@@ -1144,10 +1130,48 @@ def build_detail_view(state, varpath, zoom_range=None):
                 )
             )
 
-    # Outlier controls
+    # Sliders row: marker size + outlier threshold on the same line
+    _slider_box_style = {
+        "display": "flex",
+        "alignItems": "center",
+        "gap": "8px",
+        "flex": "1",
+        "minWidth": "250px",
+        "padding": "8px 12px",
+        "border": "1px solid #e0e0e0",
+        "borderRadius": "8px",
+        "backgroundColor": "#ffffff",
+    }
     content.append(
         html.Div(
             [
+                # Marker size slider
+                html.Div(
+                    [
+                        html.Span(
+                            "Marker size:",
+                            style={
+                                "fontSize": "12px",
+                                "color": "#607d8b",
+                                "fontWeight": "600",
+                                "whiteSpace": "nowrap",
+                            },
+                        ),
+                        html.Div(
+                            dcc.Slider(
+                                id="marker-size-slider",
+                                min=1,
+                                max=10,
+                                step=1,
+                                value=2,
+                                marks={i: str(i) for i in range(1, 11)},
+                            ),
+                            style={"flex": "1", "minWidth": "180px"},
+                        ),
+                    ],
+                    style=_slider_box_style,
+                ),
+                # Outlier threshold slider
                 html.Div(
                     [
                         html.Span(
@@ -1156,68 +1180,48 @@ def build_detail_view(state, varpath, zoom_range=None):
                                 "fontSize": "12px",
                                 "color": "#607d8b",
                                 "fontWeight": "600",
-                                "marginRight": "8px",
+                                "whiteSpace": "nowrap",
                             },
                         ),
-                        dcc.Slider(
-                            id="outlier-sigma-slider",
-                            min=1,
-                            max=10,
-                            step=0.5,
-                            value=default_n_sigma,
-                            marks={i: str(i) for i in range(1, 11)},
+                        html.Div(
+                            dcc.Slider(
+                                id="outlier-sigma-slider",
+                                min=1,
+                                max=10,
+                                step=0.5,
+                                value=default_n_sigma,
+                                marks={i: str(i) for i in range(1, 11)},
+                            ),
+                            style={"flex": "1", "minWidth": "180px"},
                         ),
-                    ],
-                    style={"width": "400px"},
-                ),
-                html.Div(
-                    [
+                        # Outlier count badge
                         html.Span(
-                            f"Outliers detected: {n_outliers}",
+                            f"Outliers: {n_outliers}",
                             id="outlier-count-display",
                             style={
-                                "fontSize": "12px",
+                                "fontSize": "11px",
                                 "color": "#c62828" if n_outliers > 0 else "#2e7d32",
                                 "fontWeight": "600",
-                                "padding": "4px 12px",
+                                "padding": "3px 10px",
                                 "borderRadius": "12px",
                                 "backgroundColor": "#ffcdd2"
                                 if n_outliers > 0
                                 else "#c8e6c9",
+                                "whiteSpace": "nowrap",
                             },
                         ),
                     ],
-                    style={
-                        "marginLeft": "20px",
-                        "display": "flex",
-                        "alignItems": "center",
-                    },
+                    style=_slider_box_style,
                 ),
                 dcc.Store(
                     id="outlier-stats", data={"mean": outlier_mean, "std": outlier_std}
                 ),
-                html.Div(
-                    "Outliers: points where |difference - mean| > N\u00d7\u03c3. "
-                    "On the Signal Comparison plot, orange diamonds mark the "
-                    "Source value and yellow diamonds the Target value "
-                    "at detected positions.",
-                    style={
-                        "fontSize": "11px",
-                        "color": "#90a4ae",
-                        "fontStyle": "italic",
-                        "marginTop": "6px",
-                        "lineHeight": "1.4",
-                    },
-                ),
             ],
             style={
                 "display": "flex",
-                "alignItems": "center",
+                "alignItems": "stretch",
                 "flexWrap": "wrap",
-                "padding": "10px 14px",
-                "border": "1px solid #e0e0e0",
-                "borderRadius": "8px",
-                "backgroundColor": "#ffffff",
+                "gap": "10px",
                 "marginBottom": "12px",
             },
         )

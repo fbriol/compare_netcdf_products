@@ -63,6 +63,69 @@ def build_legend_html() -> html.Div:
                 },
             ),
             *items,
+            # Outlier explanation
+            html.Div(
+                style={
+                    "borderTop": "1px solid #e0e0e0",
+                    "marginTop": "8px",
+                    "paddingTop": "8px",
+                },
+            ),
+            html.Div(
+                [
+                    html.Div(
+                        [
+                            html.Span(
+                                "\u25c7",
+                                style={
+                                    "color": "orange",
+                                    "fontSize": "14px",
+                                    "marginRight": "6px",
+                                },
+                            ),
+                            html.Span(
+                                "Outlier (source)",
+                                style={"fontSize": "11px", "color": "#333"},
+                            ),
+                        ],
+                        style={
+                            "display": "flex",
+                            "alignItems": "center",
+                            "marginBottom": "4px",
+                        },
+                    ),
+                    html.Div(
+                        [
+                            html.Span(
+                                "\u25c7",
+                                style={
+                                    "color": "#e6c619",
+                                    "fontSize": "14px",
+                                    "marginRight": "6px",
+                                },
+                            ),
+                            html.Span(
+                                "Outlier (target)",
+                                style={"fontSize": "11px", "color": "#333"},
+                            ),
+                        ],
+                        style={
+                            "display": "flex",
+                            "alignItems": "center",
+                            "marginBottom": "4px",
+                        },
+                    ),
+                    html.Div(
+                        "Points where |diff \u2212 mean| > N\u00d7\u03c3",
+                        style={
+                            "fontSize": "10px",
+                            "color": "#90a4ae",
+                            "fontStyle": "italic",
+                            "marginTop": "2px",
+                        },
+                    ),
+                ],
+            ),
         ],
         style={"padding": "8px 0"},
     )

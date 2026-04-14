@@ -120,7 +120,14 @@ class VariableComparisonResult:
     varpath: str
     varname: str
     long_name: str
-    status: Literal["equal", "almost_equal", "different", "masked", "missing"]
+    status: Literal[
+        "equal",
+        "almost_equal",
+        "different",
+        "masked",
+        "missing_in_target",
+        "missing_in_source",
+    ]
     shape_diff: bool = False
     dtype_diff: bool = False
     stats: Stats | None = None
@@ -390,7 +397,7 @@ def compare_group(
                     varpath=varpath,
                     varname=varname,
                     long_name=long_name,
-                    status="missing",
+                    status="missing_in_target",
                     message="Missing in target",
                 )
             )
@@ -405,6 +412,28 @@ def compare_group(
             mask=mask,
         )
         variables.append(result)
+
+    # Detect variables present in target but absent from source
+    for varname in sorted(target.variables):
+        if varname in source.variables:
+            continue
+        varobj = target.variables[varname]
+        prefix = varobj.group().path
+        if prefix != "/":
+            prefix += "/"
+        varpath = prefix + varname
+        long_name = " ".join(
+            item.capitalize() for item in getattr(varobj, "long_name", varname).split()
+        )
+        variables.append(
+            VariableComparisonResult(
+                varpath=varpath,
+                varname=varname,
+                long_name=long_name,
+                status="missing_in_source",
+                message="Missing in source",
+            )
+        )
 
     filter_description = ""
     if filter_info is not None:
