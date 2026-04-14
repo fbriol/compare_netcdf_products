@@ -149,3 +149,39 @@ class TestDataSource:
         ds.apply_flag_filter(indices)
         assert len(ds.source_data["x"]) == 3
         numpy.testing.assert_array_equal(ds.source_data["x"], [0, 2, 4])
+
+    def test_get_zoomed_source_data_returns_full_in_window(self):
+        """Zooming into a small window should return all points in that range."""
+        expected = numpy.arange(100, dtype=float)
+        computed = numpy.arange(100, dtype=float) + 0.5
+        ds = DataSource(expected, computed, flag=None)
+        zd = ds.get_zoomed_source_data(10.0, 20.0)
+        # Should contain exactly indices 10..20
+        assert zd["x"][0] == 10.0
+        assert zd["x"][-1] == 20.0
+        assert len(zd["x"]) == 11
+        assert "expected" in zd
+        assert "computed" in zd
+        assert "difference" in zd
+
+    def test_get_zoomed_source_data_downsamples_large(self):
+        """With >MAX_DISPLAY_POINTS in zoom window, LTTB should downsample."""
+        n = 50_000
+        expected = numpy.random.default_rng(42).random(n)
+        computed = numpy.random.default_rng(43).random(n)
+        ds = DataSource(expected, computed, flag=None)
+        # Zoom on full range — should still downsample
+        zd = ds.get_zoomed_source_data(0.0, float(n - 1))
+        assert len(zd["x"]) <= 20_000
+
+    def test_get_zoomed_source_data_reset_on_full(self):
+        """source_data should represent the global downsampled view."""
+        expected = numpy.arange(50, dtype=float)
+        computed = numpy.arange(50, dtype=float) * 2
+        ds = DataSource(expected, computed, flag=None)
+        # source_data covers everything
+        assert len(ds.source_data["x"]) == 50
+        # Zoom in then verify original is untouched
+        zd = ds.get_zoomed_source_data(5.0, 10.0)
+        assert len(zd["x"]) == 6
+        assert len(ds.source_data["x"]) == 50  # unchanged

@@ -299,6 +299,64 @@ class DataSource:
                 "value": [0, 0, 0, 0, 0, 0],
             }
 
+    def get_zoomed_source_data(self, xmin: float, xmax: float) -> dict[str, Any]:
+        """Return source_data re-downsampled within a zoom window.
+
+        When the user zooms tightly, the global LTTB downsampling may leave
+        very few points in the visible range. This method re-applies LTTB
+        only on the data within [xmin, xmax], ensuring up to
+        MAX_DISPLAY_POINTS are always shown in the zoom window.
+
+        Args:
+            xmin: Left edge of the zoom window (index value).
+            xmax: Right edge of the zoom window (index value).
+
+        Returns:
+            A source_data dict with keys x, expected, computed, difference
+            (and optionally nan_computed, nan_expected) re-downsampled
+            within the zoom window.
+
+        """
+        mask = (self.full_x >= xmin) & (self.full_x <= xmax)
+        x = self.full_x[mask]
+        expected = self.full_expected[mask]
+        computed = self.full_computed[mask]
+        difference = self.full_difference[mask]
+
+        n = len(x)
+        if n > MAX_DISPLAY_POINTS:
+            ds_x, ds_expected = lttb_downsample(x, expected, MAX_DISPLAY_POINTS)
+            _, ds_computed = lttb_downsample(x, computed, MAX_DISPLAY_POINTS)
+            _, ds_difference = lttb_downsample(x, difference, MAX_DISPLAY_POINTS)
+            x, expected, computed, difference = (
+                ds_x,
+                ds_expected,
+                ds_computed,
+                ds_difference,
+            )
+
+        result: dict[str, Any] = {
+            "x": x,
+            "expected": expected,
+            "computed": computed,
+            "difference": difference,
+        }
+
+        if self.exclusive_nan:
+            assert self.full_nan_computed is not None
+            assert self.full_nan_expected is not None
+            nan_comp = self.full_nan_computed[mask]
+            nan_exp = self.full_nan_expected[mask]
+            if n > MAX_DISPLAY_POINTS:
+                ds_idx = numpy.searchsorted(self.full_x[mask], x)
+                ds_idx = numpy.clip(ds_idx, 0, int(numpy.sum(mask)) - 1)
+                nan_comp = nan_comp[ds_idx]
+                nan_exp = nan_exp[ds_idx]
+            result["nan_computed"] = nan_comp
+            result["nan_expected"] = nan_exp
+
+        return result
+
     def apply_flag_filter(self, indices: numpy.ndarray) -> None:
         """Refilter data based on flag selection and rebuild sources.
 
