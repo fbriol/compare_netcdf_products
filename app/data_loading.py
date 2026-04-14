@@ -206,6 +206,7 @@ class DataSource:
             display_difference = ds_difference
             # Use the same downsampled indices for lon/lat
             if lon is not None:
+                assert lat is not None
                 ds_idx = numpy.searchsorted(x, display_x)
                 ds_idx = numpy.clip(ds_idx, 0, len(x) - 1)
                 lon = lon[ds_idx]
@@ -230,6 +231,8 @@ class DataSource:
 
         if self.exclusive_nan:
             if indices is not None:
+                assert self.full_nan_computed is not None
+                assert self.full_nan_expected is not None
                 nan_comp = self.full_nan_computed[indices]
                 nan_exp = self.full_nan_expected[indices]
             else:
@@ -237,6 +240,8 @@ class DataSource:
                 nan_exp = self.full_nan_expected
             # Downsample NaN data too if needed
             if n > MAX_DISPLAY_POINTS:
+                assert nan_comp is not None
+                assert nan_exp is not None
                 ds_idx = numpy.searchsorted(x, display_x)
                 ds_idx = numpy.clip(ds_idx, 0, len(x) - 1)
                 nan_comp = nan_comp[ds_idx]
@@ -353,9 +358,9 @@ def _find_coordinates(
     group_prefix = "/" + "/".join(parts[:-1]) if len(parts) > 1 else ""
 
     try:
-        ref_var = _navigate_to_variable(dataset, varpath)
-        if "coordinates" in ref_var.ncattrs():
-            coords_attr = str(ref_var.getncattr("coordinates"))
+        src_var = _navigate_to_variable(dataset, varpath)
+        if "coordinates" in src_var.ncattrs():
+            coords_attr = str(src_var.getncattr("coordinates"))
             lon_path = lat_path = None
             for coord_path in coords_attr.split():
                 # If path starts with "/", it's absolute; otherwise
@@ -425,33 +430,33 @@ def load_variable_data(
     LOGGER.info("load_variable_data: CACHE MISS for %s", varpath)
 
     # Navigate to the variable in both datasets
-    ref_var = _navigate_to_variable(state.ref_ds, varpath)
+    src_var = _navigate_to_variable(state.src_ds, varpath)
     tgt_var = _navigate_to_variable(state.tgt_ds, varpath)
 
-    ref_val = ref_var[:]
+    src_val = src_var[:]
     tgt_val = tgt_var[:]
-    LOGGER.info("load_variable_data: raw data shape=%s", ref_val.shape)
+    LOGGER.info("load_variable_data: raw data shape=%s", src_val.shape)
 
     # Apply expression mask if active (skip if sizes don't match)
     if state.active_mask is not None:
-        if ref_val.shape == state.active_mask.shape:
+        if src_val.shape == state.active_mask.shape:
             LOGGER.info(
                 "load_variable_data: applying mask (sum=%d/%d)",
                 int(state.active_mask.sum()),
                 int(state.active_mask.size),
             )
-            ref_val = _apply_mask(ref_val, state.active_mask)
+            src_val = _apply_mask(src_val, state.active_mask)
             tgt_val = _apply_mask(tgt_val, state.active_mask)
             LOGGER.info(
                 "load_variable_data: after mask, valid points=%d",
-                int((~numpy.ma.getmaskarray(ref_val)).sum()),
+                int((~numpy.ma.getmaskarray(src_val)).sum()),
             )
         else:
             LOGGER.info(
                 "load_variable_data: mask size %d != data size %d, "
                 "skipping mask for %s",
                 state.active_mask.size,
-                ref_val.size,
+                src_val.size,
                 varpath,
             )
     else:
@@ -466,11 +471,11 @@ def load_variable_data(
 
     # Extract lon/lat coordinates
     longitude, latitude = _find_coordinates(
-        state.ref_ds, varpath, ref_val.shape, state.active_mask
+        state.src_ds, varpath, src_val.shape, state.active_mask
     )
 
     ds = DataSource(
-        ref_val, tgt_val, relevant_flags, longitude=longitude, latitude=latitude
+        src_val, tgt_val, relevant_flags, longitude=longitude, latitude=latitude
     )
 
     # Cache with eviction

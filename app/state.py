@@ -27,9 +27,9 @@ class SessionState:
     """Holds all session-scoped state for the application.
 
     Attributes:
-        ref_path: Path to the reference NetCDF file.
+        src_path: Path to the reference NetCDF file.
         tgt_path: Path to the target NetCDF file.
-        ref_ds: Open reference NetCDF dataset.
+        src_ds: Open reference NetCDF dataset.
         tgt_ds: Open target NetCDF dataset.
         flags: Optional list of Flag objects for interactive filtering.
         active_mask: Current boolean mask from expression filter (None = no filter).
@@ -41,9 +41,9 @@ class SessionState:
 
     """
 
-    ref_path: pathlib.Path
+    src_path: pathlib.Path
     tgt_path: pathlib.Path
-    ref_ds: netCDF4.Dataset
+    src_ds: netCDF4.Dataset
     tgt_ds: netCDF4.Dataset
     flags: list[Flag] | None = None
     active_mask: numpy.ndarray | None = None
@@ -67,6 +67,6 @@ class SessionState:
 
     def close(self) -> None:
         """Close the NetCDF datasets."""
-        self.ref_ds.close()
+        self.src_ds.close()
         self.tgt_ds.close()
         LOGGER.info("NetCDF datasets closed")

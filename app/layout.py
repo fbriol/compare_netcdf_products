@@ -86,7 +86,7 @@ def build_file_info(state: SessionState) -> html.Div:
                         },
                     ),
                     html.Div(
-                        state.ref_path.name,
+                        state.src_path.name,
                         style={
                             "fontSize": "12px",
                             "color": "#263238",
@@ -148,7 +148,7 @@ def _btn_style(bg: str = "#1565c0") -> dict:
 
 def build_expression_panel(state: SessionState) -> html.Div:
     """Build the visual filter-builder panel for the sidebar."""
-    available_vars = list_all_variables(state.ref_ds)
+    available_vars = list_all_variables(state.src_ds)
     var_options = [{"label": v, "value": v} for v in available_vars]
 
     operator_options = [
@@ -433,7 +433,7 @@ def create_layout(state: SessionState) -> html.Div:
                                 },
                             ),
                             html.Span(
-                                state.ref_path.name,
+                                state.src_path.name,
                                 style={
                                     "color": "white",
                                     "fontWeight": "500",

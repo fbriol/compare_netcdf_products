@@ -76,8 +76,8 @@ class Stats:
         return Stats(
             min_diff=numpy.min(array),
             max_diff=numpy.max(array),
-            mean_diff=numpy.mean(array),
-            std_diff=numpy.std(array),
+            mean_diff=numpy.mean(array).astype(numpy.float64),
+            std_diff=numpy.std(array).astype(numpy.float64),
         )
 
     def __str__(self) -> str:
@@ -102,7 +102,7 @@ class Stats:
 
 @dataclasses.dataclass
 class VariableComparisonResult:
-    """Result of comparing a single variable between reference and target.
+    """Result of comparing a single variable between source and target.
 
     Attributes:
         varpath: Full path of the variable (e.g., '/data_01/altitude').
@@ -163,14 +163,14 @@ class GroupComparisonResult:
 
 
 def get_scale_factor(
-    ref_var: netCDF4.Variable, tgt_var: netCDF4.Variable, varname: str
+    src_var: netCDF4.Variable, tgt_var: netCDF4.Variable, varname: str
 ) -> float:
     """Return the scale factor of the variables, or 0.0 if not present.
 
     Raise an error if the scale_factor attributes are different.
 
     Args:
-        ref_var: The reference NetCDF variable.
+        src_var: The source NetCDF variable.
         tgt_var: The target NetCDF variable.
         varname: The name of the variable.
 
@@ -187,7 +187,7 @@ def get_scale_factor(
 
     default_tol = 0.0
     tol_ref = (
-        ref_var.getncattr("scale_factor") if check_variable(ref_var) else default_tol
+        src_var.getncattr("scale_factor") if check_variable(src_var) else default_tol
     )
     tol_tgt = (
         tgt_var.getncattr("scale_factor") if check_variable(tgt_var) else default_tol
@@ -201,13 +201,13 @@ def get_scale_factor(
 
 
 def compare_attributes(
-    reference: netCDF4.Group,
-    target: netCDF4.Group,
+    source: netCDF4.Dataset,
+    target: netCDF4.Dataset,
 ) -> list[AttributeComparisonResult]:
     """Compare attributes of two NetCDF groups.
 
     Args:
-        reference: The reference NetCDF group.
+        source: The source NetCDF group.
         target: The target NetCDF group.
 
     Returns:
@@ -215,21 +215,21 @@ def compare_attributes(
 
     """
     results: list[AttributeComparisonResult] = []
-    for att in reference.ncattrs():
-        ref_att = reference.getncattr(att)
+    for att in source.ncattrs():
+        src_att = source.getncattr(att)
         tgt_att = target.getncattr(att) if att in target.ncattrs() else "missing"
 
-        if isinstance(ref_att, str) and "," in ref_att:
-            ref_att = {item.strip() for item in ref_att.split(",")}
+        if isinstance(src_att, str) and "," in src_att:
+            src_att = {item.strip() for item in src_att.split(",")}
             if tgt_att != "missing":
                 tgt_att = {item.strip() for item in tgt_att.split(",")}
 
-        if ref_att != tgt_att:
-            ref_str = ", ".join(ref_att) if isinstance(ref_att, set) else str(ref_att)
+        if src_att != tgt_att:
+            src_str = ", ".join(src_att) if isinstance(src_att, set) else str(src_att)
             tgt_str = ", ".join(tgt_att) if isinstance(tgt_att, set) else str(tgt_att)
             results.append(
                 AttributeComparisonResult(
-                    name=att, src_value=ref_str, tgt_value=tgt_str
+                    name=att, src_value=src_str, tgt_value=tgt_str
                 )
             )
     return results
@@ -244,17 +244,17 @@ def _apply_mask(data: numpy.ndarray, mask: numpy.ndarray) -> numpy.ma.MaskedArra
 
 
 def compare_variable(
-    ref_var: netCDF4.Variable,
+    src_var: netCDF4.Variable,
     tgt_var: netCDF4.Variable,
     varpath: str,
     varname: str,
     long_name: str,
     mask: numpy.ndarray | None = None,
 ) -> VariableComparisonResult:
-    """Compare a single variable between reference and target.
+    """Compare a single variable between source and target.
 
     Args:
-        ref_var: Reference variable.
+        src_var: Source variable.
         tgt_var: Target variable.
         varpath: Full variable path.
         varname: Short variable name.
@@ -265,15 +265,15 @@ def compare_variable(
         Comparison result for this variable.
 
     """
-    shape_diff = ref_var.shape != tgt_var.shape
-    dtype_diff = ref_var.dtype != tgt_var.dtype
+    shape_diff = src_var.shape != tgt_var.shape
+    dtype_diff = src_var.dtype != tgt_var.dtype
 
-    ref_val = ref_var[:]
+    src_val = src_var[:]
     tgt_val = tgt_var[:]
 
     # Apply expression mask if provided (skip if sizes don't match)
-    if mask is not None and ref_val.shape == mask.shape:
-        ref_val = _apply_mask(ref_val, mask)
+    if mask is not None and src_val.shape == mask.shape:
+        src_val = _apply_mask(src_val, mask)
         tgt_val = _apply_mask(tgt_val, mask)
 
     if not isinstance(tgt_val, numpy.ma.MaskedArray):
@@ -290,7 +290,7 @@ def compare_variable(
             message="Target values are all masked",
         )
 
-    if ref_val.all() is numpy.ma.masked:
+    if src_val.all() is numpy.ma.masked:
         return VariableComparisonResult(
             varpath=varpath,
             varname=varname,
@@ -301,7 +301,7 @@ def compare_variable(
             message="Source values are all masked",
         )
 
-    if tgt_val.all() is numpy.ma.masked and ref_val.all() is numpy.ma.masked:
+    if tgt_val.all() is numpy.ma.masked and src_val.all() is numpy.ma.masked:
         return VariableComparisonResult(
             varpath=varpath,
             varname=varname,
@@ -312,7 +312,7 @@ def compare_variable(
             message="Both Target and Source values are all masked",
         )
 
-    if numpy.array_equal(ref_val, tgt_val):
+    if numpy.array_equal(src_val, tgt_val):
         return VariableComparisonResult(
             varpath=varpath,
             varname=varname,
@@ -323,11 +323,11 @@ def compare_variable(
         )
 
     # Values are different - compute stats and check tolerance
-    tol = get_scale_factor(ref_var, tgt_var, varpath)
-    diff = numpy.abs(ref_val - tgt_val)
+    tol = get_scale_factor(src_var, tgt_var, varpath)
+    diff = numpy.abs(src_val - tgt_val)
     stats = Stats.from_array(diff)
 
-    if numpy.allclose(ref_val, tgt_val, rtol=0, atol=tol, equal_nan=True):
+    if numpy.allclose(src_val, tgt_val, rtol=0, atol=tol, equal_nan=True):
         status = "almost_equal"
     else:
         status = "different"
@@ -345,15 +345,15 @@ def compare_variable(
 
 
 def compare_group(
-    reference: netCDF4.Group,
-    target: netCDF4.Group,
+    source: netCDF4.Dataset,
+    target: netCDF4.Dataset,
     filter_info: FilterInfo | None = None,
     mask: numpy.ndarray | None = None,
 ) -> GroupComparisonResult:
     """Compare a single group (attributes + variables, non-recursive).
 
     Args:
-        reference: Reference NetCDF group.
+        source: Source NetCDF group.
         target: Target NetCDF group.
         filter_info: Optional filter information.
         mask: Optional boolean mask for expression filtering.
@@ -362,15 +362,15 @@ def compare_group(
         Comparison result for this group.
 
     """
-    group_path = reference.path if hasattr(reference, "path") else "main"
+    group_path = source.path if hasattr(source, "path") else "main"
 
     # Compare attributes
-    attributes = compare_attributes(reference, target)
+    attributes = compare_attributes(source, target)
 
     # Compare variables
     variables: list[VariableComparisonResult] = []
-    for varname in sorted(reference.variables):
-        varobj = reference.variables[varname]
+    for varname in sorted(source.variables):
+        varobj = source.variables[varname]
         prefix = varobj.group().path
         if prefix != "/":
             prefix += "/"
@@ -397,7 +397,7 @@ def compare_group(
             continue
 
         result = compare_variable(
-            reference.variables[varname],
+            source.variables[varname],
             target.variables[varname],
             varpath,
             varname,
@@ -419,7 +419,7 @@ def compare_group(
 
 
 def scan_all_groups(
-    reference: netCDF4.Dataset,
+    source: netCDF4.Dataset,
     target: netCDF4.Dataset,
     filter_info: FilterInfo | None = None,
     mask: numpy.ndarray | None = None,
@@ -427,7 +427,7 @@ def scan_all_groups(
     """Recursively scan all groups and compare them.
 
     Args:
-        reference: Reference NetCDF dataset.
+        source: Source NetCDF dataset.
         target: Target NetCDF dataset.
         filter_info: Optional filter information.
         mask: Optional boolean mask for expression filtering.
@@ -438,20 +438,20 @@ def scan_all_groups(
     """
     results: list[GroupComparisonResult] = []
 
-    def _scan(ref_grp: netCDF4.Group, tgt_grp: netCDF4.Group) -> None:
-        LOGGER.info("Comparing group: %s", ref_grp.path)
-        result = compare_group(ref_grp, tgt_grp, filter_info, mask=mask)
+    def _scan(src_grp: netCDF4.Dataset, tgt_grp: netCDF4.Dataset) -> None:
+        LOGGER.info("Comparing group: %s", src_grp.path)
+        result = compare_group(src_grp, tgt_grp, filter_info, mask=mask)
         results.append(result)
-        for grp_name in ref_grp.groups:
+        for grp_name in src_grp.groups:
             if grp_name in tgt_grp.groups:
-                _scan(ref_grp.groups[grp_name], tgt_grp.groups[grp_name])
+                _scan(src_grp.groups[grp_name], tgt_grp.groups[grp_name])
 
-    _scan(reference, target)
+    _scan(source, target)
     return results
 
 
 def rescan_affected_groups(
-    reference: netCDF4.Dataset,
+    source: netCDF4.Dataset,
     target: netCDF4.Dataset,
     previous_results: list[GroupComparisonResult],
     filter_info: FilterInfo | None = None,
@@ -464,7 +464,7 @@ def rescan_affected_groups(
     their previous comparison results (with updated filter_description).
 
     Args:
-        reference: Reference NetCDF dataset.
+        source: Source NetCDF dataset.
         target: Target NetCDF dataset.
         previous_results: Results from a prior scan_all_groups call.
         filter_info: Optional filter information.
@@ -475,7 +475,7 @@ def rescan_affected_groups(
 
     """
     if mask is None or not previous_results:
-        return scan_all_groups(reference, target, filter_info, mask=mask)
+        return scan_all_groups(source, target, filter_info, mask=mask)
 
     affected_groups: set[str] = set()
     if filter_info is not None:
@@ -486,8 +486,8 @@ def rescan_affected_groups(
 
     results: list[GroupComparisonResult] = []
 
-    def _rescan(ref_grp: netCDF4.Group, tgt_grp: netCDF4.Group) -> None:
-        group_path = ref_grp.path if hasattr(ref_grp, "path") else "main"
+    def _rescan(src_grp: netCDF4.Dataset, tgt_grp: netCDF4.Dataset) -> None:
+        group_path = src_grp.path if hasattr(src_grp, "path") else "main"
         normalized = group_path.lstrip("/")
 
         # Check if this group is affected by the filter
@@ -498,7 +498,7 @@ def rescan_affected_groups(
 
         if is_affected:
             LOGGER.info("Recomparing affected group: %s", group_path)
-            result = compare_group(ref_grp, tgt_grp, filter_info, mask=mask)
+            result = compare_group(src_grp, tgt_grp, filter_info, mask=mask)
         elif group_path in prev_by_path:
             LOGGER.info("Reusing previous result for group: %s", group_path)
             prev = prev_by_path[group_path]
@@ -514,12 +514,12 @@ def rescan_affected_groups(
             )
         else:
             LOGGER.info("Comparing new group: %s", group_path)
-            result = compare_group(ref_grp, tgt_grp, filter_info, mask=mask)
+            result = compare_group(src_grp, tgt_grp, filter_info, mask=mask)
 
         results.append(result)
-        for grp_name in ref_grp.groups:
+        for grp_name in src_grp.groups:
             if grp_name in tgt_grp.groups:
-                _rescan(ref_grp.groups[grp_name], tgt_grp.groups[grp_name])
+                _rescan(src_grp.groups[grp_name], tgt_grp.groups[grp_name])
 
-    _rescan(reference, target)
+    _rescan(source, target)
     return results

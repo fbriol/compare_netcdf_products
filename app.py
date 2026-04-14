@@ -35,9 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Interactive NetCDF comparison application (Dash)."
     )
-    parser.add_argument(
-        "reference", type=str, help="Path to the reference NetCDF file."
-    )
+    parser.add_argument("source", type=str, help="Path to the source NetCDF file.")
     parser.add_argument("target", type=str, help="Path to the target NetCDF file.")
     parser.add_argument(
         "--flag",
@@ -74,13 +72,13 @@ def main() -> None:
 
     args = parse_args()
 
-    ref_path = pathlib.Path(args.reference).resolve()
+    src_path = pathlib.Path(args.source).resolve()
     tgt_path = pathlib.Path(args.target).resolve()
 
-    LOGGER.info("Opening reference: %s", ref_path)
+    LOGGER.info("Opening source: %s", src_path)
     LOGGER.info("Opening target: %s", tgt_path)
 
-    ref_ds = netCDF4.Dataset(str(ref_path), mode="r")
+    src_ds = netCDF4.Dataset(str(src_path), mode="r")
     tgt_ds = netCDF4.Dataset(str(tgt_path), mode="r")
 
     # Build flags
@@ -96,7 +94,7 @@ def main() -> None:
     if active_expression:
         LOGGER.info("Applying initial expression: %s", active_expression)
         rewritten = rewrite_expression(active_expression)
-        mask, error = create_expression_mask(ref_ds, rewritten)
+        mask, error = create_expression_mask(src_ds, rewritten)
         if mask is not None:
             active_mask = mask
             affected = find_affected_groups(active_expression)
@@ -113,9 +111,9 @@ def main() -> None:
 
     # Create session state
     state = SessionState(
-        ref_path=ref_path,
+        src_path=src_path,
         tgt_path=tgt_path,
-        ref_ds=ref_ds,
+        src_ds=src_ds,
         tgt_ds=tgt_ds,
         flags=flags,
         active_mask=active_mask,
@@ -125,7 +123,7 @@ def main() -> None:
 
     # Initial comparison scan
     LOGGER.info("Scanning groups...")
-    state.group_results = scan_all_groups(ref_ds, tgt_ds, filter_info, mask=active_mask)
+    state.group_results = scan_all_groups(src_ds, tgt_ds, filter_info, mask=active_mask)
 
     # Create Dash app
     dash_app = dash.Dash(

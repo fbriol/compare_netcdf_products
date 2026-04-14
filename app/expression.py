@@ -186,6 +186,7 @@ def create_expression_mask(
     var_data = {"ds": dataset}
     try:
         mask = expression(var_data)
+        assert isinstance(mask, numpy.ndarray) and mask.dtype == bool
         return mask, None
     except Exception as e:
         return None, f"Error evaluating expression '{expr}': {e}"
@@ -206,7 +207,7 @@ def list_all_variables(dataset: netCDF4.Dataset) -> list[str]:
     """
     variables: list[str] = []
 
-    def _walk_group(group: netCDF4.Group, prefix: str) -> None:
+    def _walk_group(group: netCDF4.Dataset, prefix: str) -> None:
         variables.extend(f"{prefix}{varname}" for varname in sorted(group.variables))
         for grp_name, subgroup in sorted(group.groups.items()):
             _walk_group(subgroup, f"{prefix}{grp_name}/")
@@ -227,7 +228,7 @@ def list_all_groups(dataset: netCDF4.Dataset) -> list[str]:
     """
     groups: list[str] = ["/"]
 
-    def _walk(group: netCDF4.Group, prefix: str) -> None:
+    def _walk(group: netCDF4.Dataset, prefix: str) -> None:
         for grp_name, subgroup in sorted(group.groups.items()):
             path = f"{prefix}{grp_name}"
             groups.append(path)
