@@ -5,6 +5,7 @@ from __future__ import annotations
 import collections
 import dataclasses
 import logging
+import threading
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -60,13 +61,23 @@ class SessionState:
     current_group_path: str = "/"
     current_varpath: str | None = None
 
+    # Reentrant lock protecting cache/mask mutations against Dash's
+    # multi-threaded callback dispatch.  Reentrant so that code holding
+    # the lock can call helpers that also acquire it.
+    lock: threading.RLock = dataclasses.field(
+        default_factory=threading.RLock, repr=False, compare=False
+    )
+
     def clear_variable_cache(self) -> None:
         """Clear the variable data cache (e.g., after expression change)."""
-        self.variable_cache.clear()
+        with self.lock:
+            self.variable_cache.clear()
         LOGGER.info("Variable cache cleared")
 
     def close(self) -> None:
         """Close the NetCDF datasets."""
-        self.src_ds.close()
-        self.tgt_ds.close()
+        try:
+            self.src_ds.close()
+        finally:
+            self.tgt_ds.close()
         LOGGER.info("NetCDF datasets closed")
