@@ -64,29 +64,18 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
-    """Create and run the Dash application."""
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
-
-    args = parse_args()
-
-    src_path = pathlib.Path(args.source).resolve()
-    tgt_path = pathlib.Path(args.target).resolve()
-
-    LOGGER.info("Opening source: %s", src_path)
-    LOGGER.info("Opening target: %s", tgt_path)
-
-    src_ds = netCDF4.Dataset(str(src_path), mode="r")
-    tgt_ds = netCDF4.Dataset(str(tgt_path), mode="r")
-
-    # Build flags
+def build_session_state(
+    args: argparse.Namespace,
+    src_path: pathlib.Path,
+    tgt_path: pathlib.Path,
+    src_ds: netCDF4.Dataset,
+    tgt_ds: netCDF4.Dataset,
+) -> SessionState:
+    """Build the initial session state for the Dash application."""
     flags = None
     if args.flag:
         flags = [Flag(varname, tgt_ds) for varname in args.flag]
 
-    # Build initial expression mask
     active_mask = None
     active_expression = args.expr
     filter_info = None
@@ -109,7 +98,7 @@ def main() -> None:
         else:
             LOGGER.error("Expression error: %s", error)
 
-    # Create session state
+    # Create the session state object
     state = SessionState(
         src_path=src_path,
         tgt_path=tgt_path,
@@ -121,21 +110,50 @@ def main() -> None:
         filter_info=filter_info,
     )
 
-    # Initial comparison scan
+    # Initial scan of groups to populate the state with comparison results
     LOGGER.info("Scanning groups...")
     state.group_results = scan_all_groups(src_ds, tgt_ds, filter_info, mask=active_mask)
+    return state
 
-    # Create Dash app
-    dash_app = dash.Dash(
-        __name__,
-        suppress_callback_exceptions=True,
-        title="NetCDF Comparison",
+
+def main() -> None:
+    """Create and run the Dash application."""
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
     )
-    dash_app.layout = create_layout(state)
-    register_callbacks(dash_app, state)
 
-    LOGGER.info("Starting Dash server on port %d", args.port)
-    dash_app.run(debug=args.debug, port=args.port)
+    args = parse_args()
+
+    src_path = pathlib.Path(args.source).resolve()
+    tgt_path = pathlib.Path(args.target).resolve()
+
+    LOGGER.info("Opening source: %s", src_path)
+    LOGGER.info("Opening target: %s", tgt_path)
+
+    src_ds = netCDF4.Dataset(str(src_path), mode="r")
+    tgt_ds = netCDF4.Dataset(str(tgt_path), mode="r")
+
+    state: SessionState | None = None
+    try:
+        state = build_session_state(args, src_path, tgt_path, src_ds, tgt_ds)
+
+        # Create Dash app
+        dash_app = dash.Dash(
+            __name__,
+            suppress_callback_exceptions=True,
+            title="NetCDF Comparison",
+        )
+        dash_app.layout = create_layout(state)
+        register_callbacks(dash_app, state)
+
+        LOGGER.info("Starting Dash server on port %d", args.port)
+        dash_app.run(debug=args.debug, port=args.port)
+    finally:
+        if state is not None:
+            state.close()
+        else:
+            src_ds.close()
+            tgt_ds.close()
 
 
 if __name__ == "__main__":
