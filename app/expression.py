@@ -34,10 +34,17 @@ _VAR_REF_RE = re.compile(r"\$\{([^}]+)\}")
 
 
 class NumpyWrapper:
-    """Wrapper that allows secure access to all numpy attributes."""
+    """Wrapper that allows restricted access to numpy attributes.
+
+    Only public (non-dunder) numpy attributes are exposed to prevent
+    sandbox escape via ``numpy.__loader__`` / ``numpy.__builtins__``
+    and similar dunder attribute chains.
+    """
 
     def __getattr__(self, name: str) -> object:
-        """Dynamically access numpy attributes."""
+        """Dynamically access numpy attributes, blocking dunders."""
+        if name.startswith("_"):
+            raise AttributeError(f"Access to private attribute '{name}' is not allowed")
         if hasattr(numpy, name):
             attr = getattr(numpy, name)
             if callable(attr) or isinstance(
@@ -68,7 +75,6 @@ class Expression:
 
     BUILTINS: ClassVar[dict[str, Any]] = {
         "range": range,
-        "__import__": __import__,
         "len": len,
         "abs": abs,
         "min": min,
@@ -79,9 +85,48 @@ class Expression:
         "np": NumpyWrapper(),
     }
 
+    # AST node types that are forbidden in user expressions to prevent
+    # arbitrary code execution via the sandboxed eval().  Note: no
+    # Import/ImportFrom since those are statements and already rejected
+    # by mode="eval".  Attribute access is validated per-node below.
+    _FORBIDDEN_NODES: ClassVar[tuple[type[ast.AST], ...]] = (
+        ast.Lambda,
+        ast.FunctionDef,
+        ast.AsyncFunctionDef,
+        ast.ClassDef,
+        ast.Global,
+        ast.Nonlocal,
+        ast.Yield,
+        ast.YieldFrom,
+        ast.Await,
+        ast.NamedExpr,
+    )
+
     def __init__(self, expr: str) -> None:
         self.expr = expr
-        self.code = compile(ast.parse(expr, mode="eval"), " ", "eval")
+        parsed = ast.parse(expr, mode="eval")
+        self._validate(parsed)
+        self.code = compile(parsed, " ", "eval")
+
+    @classmethod
+    def _validate(cls, tree: ast.AST) -> None:
+        """Reject AST nodes that could break the sandbox.
+
+        Blocks lambdas, function/class definitions, walrus, and any
+        attribute access to dunder names (e.g. ``np.__class__``) that
+        could be used to escape the restricted namespace.
+        """
+        for node in ast.walk(tree):
+            if isinstance(node, cls._FORBIDDEN_NODES):
+                raise SyntaxError(
+                    f"Expression uses forbidden construct: {type(node).__name__}"
+                )
+            if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
+                raise SyntaxError(
+                    f"Access to private attribute '{node.attr}' is not allowed"
+                )
+            if isinstance(node, ast.Name) and node.id.startswith("__"):
+                raise SyntaxError(f"Access to dunder name '{node.id}' is not allowed")
 
     def __call__(self, variables: dict[str, Any]) -> object:
         try:
