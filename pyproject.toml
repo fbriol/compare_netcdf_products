@@ -7,6 +7,7 @@ dependencies = [
     "plotly",
     "netCDF4",
     "numpy",
+    "numexpr",
 ]
 
 [tool.mypy]
