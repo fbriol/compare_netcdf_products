@@ -107,6 +107,23 @@ class TestExpression:
         result = expr({"x": [1, 2, 3]})
         assert result == 3
 
+    def test_import_is_blocked(self):
+        with pytest.raises((SyntaxError, NameError)):
+            Expression("__import__('os').system('echo pwned')")
+
+    def test_dunder_attribute_is_blocked(self):
+        with pytest.raises(SyntaxError):
+            Expression("np.__class__")
+
+    def test_numpy_private_attribute_is_blocked(self):
+        expr = Expression("np.core")
+        with pytest.raises(AttributeError):
+            expr({})
+
+    def test_lambda_is_blocked(self):
+        with pytest.raises(SyntaxError):
+            Expression("(lambda: 1)()")
+
 
 # ── create_expression_mask ────────────────────────────────────────────
 
