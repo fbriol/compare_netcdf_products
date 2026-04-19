@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from .flags import Flag
     from .state import SessionState
 
+from .comparison import _apply_mask
 from .constants import MAX_DISPLAY_POINTS
 
 LOGGER = logging.getLogger(__name__)
@@ -368,9 +369,9 @@ class DataSource:
 
 
 def _find_coordinates(
-    dataset,
+    dataset: netCDF4.Dataset,
     varpath: str,
-    data_shape: tuple,
+    data_shape: tuple[int, ...],
     active_mask: numpy.ndarray | None,
 ) -> tuple[numpy.ndarray | None, numpy.ndarray | None]:
     """Find longitude/latitude for a variable.
@@ -388,7 +389,9 @@ def _find_coordinates(
     parts = varpath.strip("/").split("/")
 
     # --- Helper: load a lon/lat pair by absolute paths ----------------
-    def _load_pair(lon_path: str, lat_path: str):
+    def _load_pair(
+        lon_path: str, lat_path: str
+    ) -> tuple[numpy.ndarray, numpy.ndarray] | tuple[None, None]:
         try:
             lon_var = _navigate_to_variable(dataset, lon_path)
             lat_var = _navigate_to_variable(dataset, lat_path)
@@ -578,7 +581,7 @@ def list_overlay_candidates(
     """
     out: list[str] = []
 
-    def _walk(group, prefix: str) -> None:
+    def _walk(group: netCDF4.Dataset, prefix: str) -> None:
         for name, var in group.variables.items():
             path = f"{prefix}/{name}"
             if path == varpath:
@@ -592,7 +595,9 @@ def list_overlay_candidates(
     return sorted(out)
 
 
-def _find_coordinate_variable(dataset, varpath: str):
+def _find_coordinate_variable(
+    dataset: netCDF4.Dataset, varpath: str
+) -> netCDF4.Variable | None:
     """Resolve the coordinate variable for a 1-D variable's dimension.
 
     Looks for a variable whose name equals the variable's first dimension,
@@ -760,20 +765,3 @@ def _navigate_to_variable(dataset: netCDF4.Dataset, varpath: str) -> netCDF4.Var
     for part in parts[:-1]:
         group = group.groups[part]
     return group.variables[parts[-1]]
-
-
-def _apply_mask(data: numpy.ndarray, mask: numpy.ndarray) -> numpy.ma.MaskedArray:  # type: ignore[type-arg]
-    """Apply a boolean mask to data, masking points where mask is False.
-
-    Args:
-        data: The data array.
-        mask: Boolean mask (True = keep, False = mask out).
-
-    Returns:
-        Masked array with non-matching points masked.
-
-    """
-    if isinstance(data, numpy.ma.MaskedArray):
-        new_mask = numpy.logical_or(data.mask, ~mask)
-        return numpy.ma.MaskedArray(data.data, mask=new_mask)  # type: ignore[no-any-return]
-    return numpy.ma.masked_where(~mask, data)  # type: ignore[no-any-return]
