@@ -437,7 +437,9 @@ def _find_coordinates(
                 if lon is not None:
                     return lon, lat
     except Exception:
-        pass
+        LOGGER.debug(
+            "coordinates attribute lookup failed for %s", varpath, exc_info=True
+        )
 
     # --- 2. Walk up group hierarchy -----------------------------------
     parts = varpath.strip("/").split("/")
@@ -481,11 +483,14 @@ def load_variable_data(
         DataSource for the requested variable.
 
     """
-    # Check cache first (move to end for LRU)
-    if varpath in state.variable_cache:
-        LOGGER.info("load_variable_data: CACHE HIT for %s", varpath)
-        state.variable_cache.move_to_end(varpath)
-        return state.variable_cache[varpath]
+    # Check cache first (move to end for LRU).  Dash dispatches callbacks
+    # from multiple threads; guard all cache reads/writes with the lock
+    # so concurrent loaders cannot corrupt the OrderedDict's linked list.
+    with state.lock:
+        if varpath in state.variable_cache:
+            LOGGER.info("load_variable_data: CACHE HIT for %s", varpath)
+            state.variable_cache.move_to_end(varpath)
+            return state.variable_cache[varpath]
 
     LOGGER.info("load_variable_data: CACHE MISS for %s", varpath)
 
@@ -538,11 +543,16 @@ def load_variable_data(
         src_val, tgt_val, relevant_flags, longitude=longitude, latitude=latitude
     )
 
-    # Cache with eviction
-    if len(state.variable_cache) >= state.max_cache_size:
-        oldest_key = next(iter(state.variable_cache))
-        del state.variable_cache[oldest_key]
-    state.variable_cache[varpath] = ds
+    # Cache with eviction (another thread may have populated the entry
+    # in the meantime; the lock keeps eviction/insertion atomic).
+    with state.lock:
+        if varpath in state.variable_cache:
+            state.variable_cache.move_to_end(varpath)
+            return state.variable_cache[varpath]
+        if len(state.variable_cache) >= state.max_cache_size:
+            oldest_key = next(iter(state.variable_cache))
+            del state.variable_cache[oldest_key]
+        state.variable_cache[varpath] = ds
 
     return ds
 
