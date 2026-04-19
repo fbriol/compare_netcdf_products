@@ -18,10 +18,10 @@ import netCDF4
 
 from app.callbacks import register_callbacks
 from app.comparison import FilterInfo, scan_all_groups
+from app.config import AppConfig, load_config
 from app.expression import (
     create_expression_mask,
     find_affected_groups,
-    rewrite_expression,
 )
 from app.flags import Flag
 from app.layout import create_layout
@@ -35,8 +35,18 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Interactive NetCDF comparison application (Dash)."
     )
-    parser.add_argument("source", type=str, help="Path to the source NetCDF file.")
-    parser.add_argument("target", type=str, help="Path to the target NetCDF file.")
+    parser.add_argument(
+        "source", type=str, nargs="?", help="Path to the source NetCDF file."
+    )
+    parser.add_argument(
+        "target", type=str, nargs="?", help="Path to the target NetCDF file."
+    )
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to a TOML config file. CLI args override config values.",
+    )
     parser.add_argument(
         "--flag",
         type=str,
@@ -53,7 +63,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--port",
         type=int,
-        default=5006,
+        default=None,
         help="Port to serve the application on (default: 5006).",
     )
     parser.add_argument(
@@ -62,6 +72,22 @@ def parse_args() -> argparse.Namespace:
         help="Enable Dash debug mode.",
     )
     return parser.parse_args()
+
+
+def _apply_config_defaults(args: argparse.Namespace, config: AppConfig) -> None:
+    """Fill argparse defaults from the TOML config (CLI takes precedence)."""
+    if args.source is None:
+        args.source = config.paths.source
+    if args.target is None:
+        args.target = config.paths.target
+    if args.expr is None:
+        args.expr = config.filter.expression
+    if not args.flag:
+        args.flag = list(config.filter.flags) or None
+    if args.port is None:
+        args.port = config.server.port
+    if not args.debug:
+        args.debug = config.server.debug
 
 
 def build_session_state(
@@ -82,8 +108,7 @@ def build_session_state(
 
     if active_expression:
         LOGGER.info("Applying initial expression: %s", active_expression)
-        rewritten = rewrite_expression(active_expression)
-        mask, error = create_expression_mask(src_ds, rewritten)
+        mask, error = create_expression_mask(src_ds, active_expression)
         if mask is not None:
             active_mask = mask
             affected = find_affected_groups(active_expression)
@@ -123,6 +148,17 @@ def main() -> None:
     )
 
     args = parse_args()
+
+    config = load_config(args.config) if args.config else AppConfig()
+    _apply_config_defaults(args, config)
+
+    if args.source is None or args.target is None:
+        raise SystemExit(
+            "Source and target NetCDF paths are required "
+            "(via CLI positional args or [paths] in --config)."
+        )
+
+    logging.getLogger().setLevel(config.logging.level.upper())
 
     src_path = pathlib.Path(args.source).resolve()
     tgt_path = pathlib.Path(args.target).resolve()
