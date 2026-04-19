@@ -474,6 +474,7 @@ def create_layout(state: SessionState) -> html.Div:
             dcc.Store(id="nav-current-view", data="group"),
             dcc.Store(id="nav-group-path", data="/"),
             dcc.Store(id="nav-varpath", data=None),
+            dcc.Store(id="nav-overlay-varpath", data=None),
             dcc.Store(id="zoom-range", data=None),
             dcc.Store(id="url-initial-load", data=True),
             dcc.Location(id="url-location", refresh=False),
@@ -598,7 +599,49 @@ def create_layout(state: SessionState) -> html.Div:
                                     "marginBottom": "12px",
                                 },
                             ),
-                            html.Div(id="main-content"),
+                            dcc.Loading(
+                                html.Div(id="main-content"),
+                                type="circle",
+                                color="rgb(76,114,176)",
+                                delay_show=150,
+                                overlay_style={
+                                    "visibility": "visible",
+                                    "opacity": 0.5,
+                                },
+                                custom_spinner=html.Div(
+                                    [
+                                        html.Div(
+                                            style={
+                                                "width": "22px",
+                                                "height": "22px",
+                                                "border": "3px solid #cfd8dc",
+                                                "borderTopColor": "rgb(76,114,176)",
+                                                "borderRadius": "50%",
+                                                "animation": "cmp-spin 0.8s"
+                                                " linear infinite",
+                                            },
+                                        ),
+                                        html.Span(
+                                            "Loading view\u2026",
+                                            style={
+                                                "fontSize": "12px",
+                                                "fontWeight": "600",
+                                                "color": "rgb(76,114,176)",
+                                            },
+                                        ),
+                                    ],
+                                    style={
+                                        "display": "flex",
+                                        "alignItems": "center",
+                                        "gap": "10px",
+                                        "padding": "10px 16px",
+                                        "backgroundColor": "rgba(255,255,255,0.92)",
+                                        "border": "1px solid #cfd8dc",
+                                        "borderRadius": "8px",
+                                        "boxShadow": "0 2px 8px rgba(0,0,0,0.08)",
+                                    },
+                                ),
+                            ),
                         ],
                         style={
                             "flex": "1",

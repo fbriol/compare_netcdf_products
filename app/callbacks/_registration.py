@@ -26,13 +26,13 @@ if TYPE_CHECKING:
     from ..state import SessionState
 
 from ..comparison import FilterInfo, rescan_affected_groups, scan_all_groups
-from ..data_loading import load_variable_data
+from ..data_loading import load_overlay_for_comparison, load_variable_data
 from ..expression import (
     create_expression_mask,
     find_affected_groups,
     rewrite_expression,
 )
-from ..plots import build_all_figures
+from ..plots import add_comparison_overlay, build_all_figures
 from ..utils import (
     count_diffs,
     count_diffs_recursive,
@@ -502,6 +502,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         State({"type": "plot-graph", "label": ALL}, "id"),
         State("marker-size-slider", "value"),
         State("zoom-range", "data"),
+        State("nav-overlay-varpath", "data"),
         prevent_initial_call=True,
     )
     def update_outliers(
@@ -511,6 +512,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         graph_ids,
         marker_size,
         zoom_range,
+        overlay_varpath,
     ):
         if not stats or not n_sigma or not varpath or not graph_ids:
             return ([no_update] * len(graph_ids), no_update, no_update)
@@ -667,6 +669,14 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                     yaxis_autorange=False,
                 )
 
+        # Re-apply overlay trace on the Comparison plot
+        if overlay_varpath:
+            overlay = load_overlay_for_comparison(
+                state, overlay_varpath, data_source, varpath
+            )
+            if overlay is not None:
+                add_comparison_overlay(new_sig_comp, overlay)
+
         # Build results matching graph_ids order
         fig_map = {
             "Signal Comparison": new_sig_comp,
@@ -712,6 +722,179 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         State({"type": "plot-container", "label": ALL}, "id"),
         prevent_initial_call=True,
     )
+
+    # ── Overlay: sync dropdown selection into store ────────────────
+
+    @app.callback(
+        Output("nav-overlay-varpath", "data", allow_duplicate=True),
+        Input("overlay-var-dropdown", "value"),
+        prevent_initial_call=True,
+    )
+    def sync_overlay_store(value):
+        return value or None
+
+    # ── Overlay: clear store when the active variable changes ───────
+
+    @app.callback(
+        Output("nav-overlay-varpath", "data", allow_duplicate=True),
+        Input("nav-varpath", "data"),
+        prevent_initial_call=True,
+    )
+    def clear_overlay_on_var_change(_varpath):
+        return None
+
+    # ── Overlay: rebuild Signal Comparison when selection changes ──
+
+    @app.callback(
+        Output({"type": "plot-graph", "label": ALL}, "figure", allow_duplicate=True),
+        Input("nav-overlay-varpath", "data"),
+        State("nav-varpath", "data"),
+        State({"type": "plot-graph", "label": ALL}, "id"),
+        State("marker-size-slider", "value"),
+        State("outlier-sigma-slider", "value"),
+        State("outlier-stats", "data"),
+        State("zoom-range", "data"),
+        prevent_initial_call=True,
+    )
+    def apply_overlay(
+        overlay_varpath,
+        varpath,
+        graph_ids,
+        marker_size,
+        n_sigma,
+        stats,
+        zoom_range,
+    ):
+        n = len(graph_ids) if graph_ids else 0
+        if not varpath or not graph_ids:
+            return [no_update] * n
+
+        try:
+            data_source = load_variable_data(state, varpath)
+        except Exception:
+            return [no_update] * n
+
+        overlay = (
+            load_overlay_for_comparison(state, overlay_varpath, data_source, varpath)
+            if overlay_varpath
+            else None
+        )
+
+        msize = marker_size or 2
+        has_zoom = zoom_range and not zoom_range.get("auto")
+        if has_zoom:
+            zd = data_source.get_zoomed_source_data(
+                float(zoom_range["min"]), float(zoom_range["max"])
+            )
+        else:
+            zd = data_source.source_data
+
+        new_sig_comp = go.Figure()
+        new_sig_comp.add_trace(
+            go.Scattergl(
+                x=zd["x"],
+                y=zd["expected"],
+                mode="markers",
+                marker={"size": msize, "color": "rgb(76,114,176)"},
+                name="Source",
+                hovertemplate="index: %{x}<br>source: %{y}<extra></extra>",
+            )
+        )
+        new_sig_comp.add_trace(
+            go.Scattergl(
+                x=zd["x"],
+                y=zd["computed"],
+                mode="markers",
+                marker={"size": msize, "color": "rgb(196,78,82)"},
+                name="Target",
+                hovertemplate="index: %{x}<br>target: %{y}<extra></extra>",
+            )
+        )
+
+        # Outlier traces (from full display data, not zoomed-resampled)
+        d_full = data_source.source_data
+        diff_full = numpy.asarray(d_full["difference"], dtype=float)
+        if stats and n_sigma:
+            mean = stats.get("mean", 0.0)
+            std = stats.get("std", 1.0)
+        else:
+            valid = diff_full[~numpy.isnan(diff_full)]
+            mean = float(numpy.mean(valid)) if len(valid) > 0 else 0.0
+            std = float(numpy.std(valid)) if len(valid) > 0 else 1.0
+        sigma = n_sigma or 3
+        x_full = numpy.asarray(d_full["x"])
+        expected_full = numpy.asarray(d_full["expected"], dtype=float)
+        computed_full = numpy.asarray(d_full["computed"], dtype=float)
+        o_mask = numpy.abs(diff_full - mean) > (sigma * std)
+        if numpy.any(o_mask):
+            new_sig_comp.add_trace(
+                go.Scattergl(
+                    x=x_full[o_mask],
+                    y=expected_full[o_mask],
+                    mode="markers",
+                    marker={
+                        "size": 6,
+                        "color": "orange",
+                        "symbol": "diamond",
+                        "line": {"width": 1, "color": "red"},
+                    },
+                    name="Source (outlier)",
+                    hovertemplate="index: %{x}<br>source: %{y}"
+                    "<br><b>OUTLIER</b><extra></extra>",
+                )
+            )
+            new_sig_comp.add_trace(
+                go.Scattergl(
+                    x=x_full[o_mask],
+                    y=computed_full[o_mask],
+                    mode="markers",
+                    marker={
+                        "size": 6,
+                        "color": "yellow",
+                        "symbol": "diamond",
+                        "line": {"width": 1, "color": "red"},
+                    },
+                    name="Target (outlier)",
+                    hovertemplate="index: %{x}<br>target: %{y}"
+                    "<br><b>OUTLIER</b><extra></extra>",
+                )
+            )
+
+        new_sig_comp.update_layout(
+            template="seaborn",
+            xaxis_title="Index",
+            yaxis_title="Value",
+            height=500,
+            margin={"l": 60, "r": 20, "t": 10, "b": 40},
+            legend={
+                "orientation": "h",
+                "yanchor": "bottom",
+                "y": 1.02,
+                "xanchor": "left",
+                "x": 0,
+                "itemsizing": "constant",
+            },
+            yaxis_fixedrange=False,
+        )
+        if has_zoom:
+            new_sig_comp.update_layout(
+                xaxis_range=[zoom_range["min"], zoom_range["max"]]
+            )
+        if zoom_range and zoom_range.get("ymin") is not None:
+            new_sig_comp.update_layout(
+                yaxis_range=[zoom_range["ymin"], zoom_range["ymax"]],
+                yaxis_autorange=False,
+            )
+        if overlay is not None:
+            add_comparison_overlay(new_sig_comp, overlay)
+
+        result = []
+        for gid in graph_ids:
+            if gid["label"] == "Signal Comparison":
+                result.append(new_sig_comp)
+            else:
+                result.append(no_update)
+        return result
 
     # ── Marker size ────────────────────────────────────────────────
     # NOTE: Plotly figures in Dash are immutable once rendered.
@@ -913,6 +1096,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         State({"type": "plot-graph", "label": ALL}, "id"),
         State("marker-size-slider", "value"),
         State("outlier-sigma-slider", "value"),
+        State("nav-overlay-varpath", "data"),
         prevent_initial_call=True,
     )
     def resample_on_zoom(
@@ -921,6 +1105,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         graph_ids,
         marker_size,
         n_sigma,
+        overlay_varpath,
     ):
         if not varpath:
             return [no_update] * len(graph_ids)
@@ -1034,6 +1219,12 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                     fig.update_layout(
                         xaxis_range=[zoom_range["min"], zoom_range["max"]]
                     )
+                if overlay_varpath:
+                    overlay = load_overlay_for_comparison(
+                        state, overlay_varpath, data_source, varpath
+                    )
+                    if overlay is not None:
+                        add_comparison_overlay(fig, overlay)
 
             elif label == "Signal Difference":
                 fig = go.Figure()
@@ -1428,9 +1619,10 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         State("nav-varpath", "data"),
         State({"type": "plot-graph", "label": ALL}, "id"),
         State("outlier-sigma-slider", "value"),
+        State("nav-overlay-varpath", "data"),
         prevent_initial_call=True,
     )
-    def apply_flag_filter(selected_flags, varpath, graph_ids, n_sigma):
+    def apply_flag_filter(selected_flags, varpath, graph_ids, n_sigma, overlay_varpath):
         import numpy
 
         n_graphs = len(graph_ids) if graph_ids else 0
@@ -1463,7 +1655,14 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                     break
 
         # Rebuild all figures from updated data
-        new_configs = build_all_figures(long_name, data_source)
+        overlay = (
+            load_overlay_for_comparison(state, overlay_varpath, data_source, varpath)
+            if overlay_varpath
+            else None
+        )
+        new_configs = build_all_figures(
+            long_name, data_source, comparison_overlay=overlay
+        )
         new_fig_map = dict(new_configs)
 
         # Recompute outliers on filtered data

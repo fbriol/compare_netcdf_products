@@ -547,6 +547,193 @@ def load_variable_data(
     return ds
 
 
+def list_overlay_candidates(
+    state: SessionState,
+    varpath: str,
+) -> list[str]:
+    """List 1-D variable paths in the target dataset, for the overlay dropdown.
+
+    The overlay is rendered on the Signal Comparison plot's secondary y-axis.
+    Any 1-D variable is allowed; x values are rescaled to the primary plot's
+    index range at render time, so a 1Hz variable can be overlaid on a 20Hz
+    plot of the "same" quantity.
+
+    Args:
+        state: Session state (uses ``state.tgt_ds``).
+        varpath: The current variable path (excluded from results).
+
+    Returns:
+        Sorted list of absolute variable paths.
+
+    """
+    out: list[str] = []
+
+    def _walk(group, prefix: str) -> None:
+        for name, var in group.variables.items():
+            path = f"{prefix}/{name}"
+            if path == varpath:
+                continue
+            if var.ndim == 1 and var.shape[0] > 1:
+                out.append(path)
+        for gname, g in group.groups.items():
+            _walk(g, f"{prefix}/{gname}")
+
+    _walk(state.tgt_ds, "")
+    return sorted(out)
+
+
+def _find_coordinate_variable(dataset, varpath: str):
+    """Resolve the coordinate variable for a 1-D variable's dimension.
+
+    Looks for a variable whose name equals the variable's first dimension,
+    in the same group or any ancestor group up to root. Returns the netCDF4
+    Variable or ``None`` if not found.
+    """
+    try:
+        var = _navigate_to_variable(dataset, varpath)
+    except (KeyError, IndexError):
+        return None
+    if var.ndim < 1:
+        return None
+    dim_name = var.dimensions[0]
+
+    parts = varpath.strip("/").split("/")
+    for depth in range(len(parts) - 1, -1, -1):
+        group = dataset
+        for p in parts[:depth]:
+            try:
+                group = group.groups[p]
+            except KeyError:
+                break
+        else:
+            coord = group.variables.get(dim_name)
+            if coord is not None and coord.ndim == 1:
+                return coord
+    return None
+
+
+def load_overlay_for_comparison(
+    state: SessionState,
+    overlay_varpath: str,
+    data_source: DataSource,
+    primary_varpath: str,
+) -> dict[str, Any] | None:
+    """Load overlay data for the Signal Comparison plot.
+
+    The overlay is aligned to the primary plot's x-axis (index space) using
+    the coordinate variable of each variable's dimension (typically ``time``).
+    For each overlay sample, its coordinate value is mapped to a fractional
+    index in the primary's coordinate array via linear interpolation. This
+    lets a 1Hz variable (e.g. ``mqe_ocean(time)``) overlay correctly onto a
+    20Hz plot of the "same" quantity in time.
+
+    Falls back to proportional index rescaling if coordinate variables can't
+    be resolved.
+
+    Args:
+        state: Session state.
+        overlay_varpath: Path of the variable to overlay.
+        data_source: DataSource whose x range dictates the overlay's x-span.
+        primary_varpath: Path of the primary variable (for coordinate lookup).
+
+    Returns:
+        Dict with keys ``x``, ``y``, ``name`` — or ``None`` on load failure.
+
+    """
+    try:
+        var = _navigate_to_variable(state.tgt_ds, overlay_varpath)
+        val = var[:]
+    except (KeyError, AttributeError, IndexError) as exc:
+        LOGGER.warning(
+            "load_overlay_for_comparison: failed to load %s: %s",
+            overlay_varpath,
+            exc,
+        )
+        return None
+
+    if val.ndim != 1 or val.shape[0] < 2:
+        return None
+
+    if state.active_mask is not None and val.shape == state.active_mask.shape:
+        val = _apply_mask(val, state.active_mask)
+
+    if issubclass(val.dtype.type, numpy.integer):
+        if isinstance(val, numpy.ma.MaskedArray):
+            val = numpy.ma.masked_array(
+                _promote_integer_to_float(val.data), mask=val.mask
+            )
+        else:
+            val = _promote_integer_to_float(val)
+
+    if isinstance(val, numpy.ma.MaskedArray):
+        arr = numpy.ma.filled(val, fill_value=numpy.nan)
+    else:
+        arr = numpy.asarray(val, dtype=float)
+
+    m = arr.shape[0]
+    primary_n = len(data_source.full_x)
+
+    # Try to align via coordinate variables (e.g. time).
+    overlay_coord_var = _find_coordinate_variable(state.tgt_ds, overlay_varpath)
+    primary_coord_var = _find_coordinate_variable(state.tgt_ds, primary_varpath)
+    x: numpy.ndarray | None = None
+    if (
+        overlay_coord_var is not None
+        and primary_coord_var is not None
+        and overlay_coord_var.shape == (m,)
+        and primary_coord_var.shape == (primary_n,)
+    ):
+        t_overlay = numpy.ma.filled(overlay_coord_var[:], fill_value=numpy.nan).astype(
+            float
+        )
+        t_primary = numpy.ma.filled(primary_coord_var[:], fill_value=numpy.nan).astype(
+            float
+        )
+        # Only use coord-based alignment when both arrays are usable and the
+        # primary coord is strictly monotonic (required by numpy.interp).
+        valid_primary = ~numpy.isnan(t_primary)
+        if (
+            numpy.all(valid_primary)
+            and numpy.all(numpy.diff(t_primary) > 0)
+            and not numpy.all(numpy.isnan(t_overlay))
+        ):
+            x = numpy.interp(
+                t_overlay,
+                t_primary,
+                numpy.arange(primary_n, dtype=float),
+                left=numpy.nan,
+                right=numpy.nan,
+            )
+            LOGGER.info(
+                "load_overlay_for_comparison: coord-based alignment "
+                "(overlay n=%d, primary n=%d)",
+                m,
+                primary_n,
+            )
+
+    if x is None:
+        # Fallback: proportional rescaling based on index.
+        scale = (primary_n - 1) / (m - 1) if m > 1 else 1.0
+        x = numpy.arange(m, dtype=float) * scale
+
+    # Drop samples with NaN x (outside primary's coord range) before LTTB.
+    finite = ~numpy.isnan(x)
+    if not numpy.all(finite):
+        x = x[finite]
+        arr = arr[finite]
+    if len(x) == 0:
+        return None
+
+    if len(x) > MAX_DISPLAY_POINTS:
+        x, arr = lttb_downsample(x, arr, MAX_DISPLAY_POINTS)
+
+    return {
+        "x": x,
+        "y": arr,
+        "name": overlay_varpath.rsplit("/", 1)[-1],
+    }
+
+
 def _navigate_to_variable(dataset: netCDF4.Dataset, varpath: str) -> netCDF4.Variable:
     """Navigate to a variable in a NetCDF dataset by its full path.
 

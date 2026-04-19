@@ -17,7 +17,10 @@ if TYPE_CHECKING:
     pass
 
 from ..constants import STATUS_COLORS, STATUS_TEXT_COLORS
-from ..data_loading import load_variable_data
+from ..data_loading import (
+    list_overlay_candidates,
+    load_variable_data,
+)
 from ..plots import build_all_figures
 from ..utils import (
     count_diffs_recursive,
@@ -1013,92 +1016,6 @@ def build_detail_view(state, varpath, zoom_range=None):
         ),
     ]
 
-    # Plot visibility toggles
-    plot_labels = [label for label, _ in plot_configs]
-    content.append(
-        html.Div(
-            [
-                html.Span(
-                    "Visible plots:",
-                    style={
-                        "fontSize": "12px",
-                        "color": "#607d8b",
-                        "fontWeight": "600",
-                        "marginRight": "8px",
-                    },
-                ),
-                dcc.Checklist(
-                    id="plot-visibility",
-                    options=[{"label": f" {lbl}", "value": lbl} for lbl in plot_labels],
-                    value=["Signal Comparison"],
-                    inline=True,
-                    style={
-                        "fontSize": "12px",
-                        "display": "inline-flex",
-                        "gap": "12px",
-                        "flexWrap": "wrap",
-                    },
-                    inputStyle={"marginRight": "4px"},
-                ),
-            ],
-            style={
-                "display": "flex",
-                "alignItems": "center",
-                "padding": "10px 14px",
-                "border": "1px solid #e0e0e0",
-                "borderRadius": "8px",
-                "backgroundColor": "#ffffff",
-                "marginBottom": "8px",
-                "flexWrap": "wrap",
-                "gap": "8px",
-            },
-        )
-    )
-
-    # Flag filter (if applicable)
-    if data_source.flags:
-        all_options = []
-        for flag in data_source.flags:
-            all_options.extend(flag.options)
-        content.append(
-            html.Div(
-                [
-                    html.Div(
-                        "\U0001f3f3 Flag Filters",
-                        style={
-                            "fontWeight": "bold",
-                            "color": "#37474f",
-                            "marginBottom": "4px",
-                        },
-                    ),
-                    html.Div(
-                        "Select flag values to keep (unselected = all kept)",
-                        style={
-                            "fontSize": "10px",
-                            "color": "#90a4ae",
-                            "marginBottom": "6px",
-                            "fontStyle": "italic",
-                        },
-                    ),
-                    dcc.Dropdown(
-                        id="flag-dropdown",
-                        options=[{"label": o, "value": o} for o in all_options],
-                        value=[],
-                        multi=True,
-                        placeholder="Select flag values to filter...",
-                        style={"fontSize": "12px"},
-                    ),
-                ],
-                style={
-                    "border": "1px solid #e0e0e0",
-                    "borderRadius": "8px",
-                    "padding": "12px 16px",
-                    "backgroundColor": "#ffffff",
-                    "marginBottom": "12px",
-                },
-            )
-        )
-
     # Outlier detection
     d = data_source.source_data
     diff_arr = numpy.asarray(d["difference"], dtype=float)
@@ -1164,99 +1081,199 @@ def build_detail_view(state, varpath, zoom_range=None):
                 )
             )
 
-    # Sliders row: marker size + outlier threshold on the same line
-    _slider_box_style = {
+    # Compact control bar: visibility pills + outlier badge + Settings toggle
+    plot_labels = [label for label, _ in plot_configs]
+    overlay_options = list_overlay_candidates(state, varpath)
+
+    settings_cell_style = {
         "display": "flex",
-        "alignItems": "center",
-        "gap": "8px",
+        "flexDirection": "column",
+        "gap": "4px",
+        "minWidth": "220px",
         "flex": "1",
-        "minWidth": "250px",
-        "padding": "8px 12px",
-        "border": "1px solid #e0e0e0",
-        "borderRadius": "8px",
-        "backgroundColor": "#ffffff",
     }
-    content.append(
+    settings_label_style = {
+        "fontSize": "11px",
+        "color": "#607d8b",
+        "fontWeight": "600",
+        "textTransform": "uppercase",
+        "letterSpacing": "0.4px",
+    }
+
+    settings_cells: list[Any] = [
         html.Div(
             [
-                # Marker size slider
-                html.Div(
-                    [
-                        html.Span(
-                            "Marker size:",
-                            style={
-                                "fontSize": "12px",
-                                "color": "#607d8b",
-                                "fontWeight": "600",
-                                "whiteSpace": "nowrap",
-                            },
-                        ),
-                        html.Div(
-                            dcc.Slider(
-                                id="marker-size-slider",
-                                min=1,
-                                max=10,
-                                step=1,
-                                value=2,
-                                marks={i: str(i) for i in range(1, 11)},
-                            ),
-                            style={"flex": "1", "minWidth": "180px"},
-                        ),
-                    ],
-                    style=_slider_box_style,
+                html.Span("Marker size", style=settings_label_style),
+                dcc.Slider(
+                    id="marker-size-slider",
+                    min=1,
+                    max=10,
+                    step=1,
+                    value=2,
+                    marks={i: str(i) for i in range(1, 11)},
                 ),
-                # Outlier threshold slider
-                html.Div(
+            ],
+            style=settings_cell_style,
+        ),
+        html.Div(
+            [
+                html.Span(
+                    "Outlier threshold (N\u00d7\u03c3)", style=settings_label_style
+                ),
+                dcc.Slider(
+                    id="outlier-sigma-slider",
+                    min=1,
+                    max=10,
+                    step=0.5,
+                    value=default_n_sigma,
+                    marks={i: str(i) for i in range(1, 11)},
+                ),
+            ],
+            style=settings_cell_style,
+        ),
+        html.Div(
+            [
+                html.Span(
+                    "\U0001f4c8 Overlay on Comparison", style=settings_label_style
+                ),
+                dcc.Dropdown(
+                    id="overlay-var-dropdown",
+                    options=[{"label": p, "value": p} for p in overlay_options],
+                    value=None,
+                    placeholder=(
+                        f"Select a variable ({len(overlay_options)} available)..."
+                    )
+                    if overlay_options
+                    else "No 1-D variables available",
+                    clearable=True,
+                    style={"fontSize": "12px"},
+                ),
+            ],
+            style=settings_cell_style,
+        ),
+    ]
+
+    if data_source.flags:
+        all_options = []
+        for flag in data_source.flags:
+            all_options.extend(flag.options)
+        settings_cells.append(
+            html.Div(
+                [
+                    html.Span("\U0001f3f3 Flag filter", style=settings_label_style),
+                    dcc.Dropdown(
+                        id="flag-dropdown",
+                        options=[{"label": o, "value": o} for o in all_options],
+                        value=[],
+                        multi=True,
+                        placeholder="Select flag values to keep...",
+                        style={"fontSize": "12px"},
+                    ),
+                ],
+                style=settings_cell_style,
+            )
+        )
+    else:
+        # Keep the dropdown in the DOM (hidden) so callbacks using flag-dropdown
+        # as a State don't break on variables without flags.
+        settings_cells.append(
+            html.Div(
+                dcc.Dropdown(id="flag-dropdown", options=[], value=[], multi=True),
+                style={"display": "none"},
+            )
+        )
+
+    visibility_pills = dcc.Checklist(
+        id="plot-visibility",
+        options=[{"label": f" {lbl}", "value": lbl} for lbl in plot_labels],
+        value=["Signal Comparison"],
+        inline=True,
+        style={
+            "fontSize": "12px",
+            "display": "inline-flex",
+            "gap": "12px",
+            "flexWrap": "wrap",
+        },
+        inputStyle={"marginRight": "4px"},
+    )
+
+    outlier_badge = html.Span(
+        f"Outliers: {n_outliers}",
+        id="outlier-count-display",
+        style={
+            "fontSize": "11px",
+            "color": "#c62828" if n_outliers > 0 else "#2e7d32",
+            "fontWeight": "600",
+            "padding": "3px 10px",
+            "borderRadius": "12px",
+            "backgroundColor": "#ffcdd2" if n_outliers > 0 else "#c8e6c9",
+            "whiteSpace": "nowrap",
+        },
+    )
+
+    content.append(
+        html.Details(
+            [
+                html.Summary(
                     [
                         html.Span(
-                            "Outlier threshold (N\u00d7\u03c3):",
+                            "Visible:",
                             style={
                                 "fontSize": "12px",
                                 "color": "#607d8b",
                                 "fontWeight": "600",
-                                "whiteSpace": "nowrap",
+                                "marginRight": "6px",
                             },
                         ),
-                        html.Div(
-                            dcc.Slider(
-                                id="outlier-sigma-slider",
-                                min=1,
-                                max=10,
-                                step=0.5,
-                                value=default_n_sigma,
-                                marks={i: str(i) for i in range(1, 11)},
-                            ),
-                            style={"flex": "1", "minWidth": "180px"},
-                        ),
-                        # Outlier count badge
+                        visibility_pills,
+                        html.Span(style={"flex": "1"}),
+                        outlier_badge,
                         html.Span(
-                            f"Outliers: {n_outliers}",
-                            id="outlier-count-display",
+                            "\u2699 Settings",
                             style={
-                                "fontSize": "11px",
-                                "color": "#c62828" if n_outliers > 0 else "#2e7d32",
+                                "fontSize": "12px",
+                                "color": "#546e7a",
                                 "fontWeight": "600",
-                                "padding": "3px 10px",
+                                "marginLeft": "12px",
+                                "padding": "4px 10px",
+                                "border": "1px solid #cfd8dc",
                                 "borderRadius": "12px",
-                                "backgroundColor": "#ffcdd2"
-                                if n_outliers > 0
-                                else "#c8e6c9",
-                                "whiteSpace": "nowrap",
+                                "backgroundColor": "#eceff1",
+                                "cursor": "pointer",
+                                "userSelect": "none",
                             },
                         ),
                     ],
-                    style=_slider_box_style,
+                    style={
+                        "display": "flex",
+                        "alignItems": "center",
+                        "gap": "8px",
+                        "flexWrap": "wrap",
+                        "listStyle": "none",
+                        "cursor": "pointer",
+                    },
+                ),
+                html.Div(
+                    settings_cells,
+                    style={
+                        "display": "flex",
+                        "flexWrap": "wrap",
+                        "gap": "16px 24px",
+                        "padding": "12px 4px 4px 4px",
+                        "marginTop": "8px",
+                        "borderTop": "1px dashed #e0e0e0",
+                    },
                 ),
                 dcc.Store(
                     id="outlier-stats", data={"mean": outlier_mean, "std": outlier_std}
                 ),
             ],
             style={
-                "display": "flex",
-                "alignItems": "stretch",
-                "flexWrap": "wrap",
-                "gap": "10px",
-                "marginBottom": "12px",
+                "padding": "8px 14px",
+                "border": "1px solid #e0e0e0",
+                "borderRadius": "8px",
+                "backgroundColor": "#ffffff",
+                "marginBottom": "10px",
             },
         )
     )
@@ -1299,15 +1316,57 @@ def build_detail_view(state, varpath, zoom_range=None):
                             "paddingBottom": "4px",
                         },
                     ),
-                    dcc.Graph(
-                        id={"type": "plot-graph", "label": label},
-                        figure=fig,
-                        config={
-                            "displayModeBar": True,
-                            "scrollZoom": True,
-                            "modeBarButtonsToAdd": ["drawline", "eraseshape"],
-                        },
-                        style={"width": "100%"},
+                    dcc.Loading(
+                        dcc.Graph(
+                            id={"type": "plot-graph", "label": label},
+                            figure=fig,
+                            config={
+                                "displayModeBar": True,
+                                "scrollZoom": True,
+                                "modeBarButtonsToAdd": [
+                                    "drawline",
+                                    "eraseshape",
+                                ],
+                            },
+                            style={"width": "100%"},
+                        ),
+                        type="circle",
+                        color="rgb(76,114,176)",
+                        delay_show=150,
+                        overlay_style={"visibility": "visible", "opacity": 0.5},
+                        custom_spinner=html.Div(
+                            [
+                                html.Div(
+                                    className="dash-spinner dash-default-spinner",
+                                    style={
+                                        "width": "22px",
+                                        "height": "22px",
+                                        "border": "3px solid #cfd8dc",
+                                        "borderTopColor": "rgb(76,114,176)",
+                                        "borderRadius": "50%",
+                                        "animation": "cmp-spin 0.8s linear infinite",
+                                    },
+                                ),
+                                html.Span(
+                                    "Fetching data\u2026",
+                                    style={
+                                        "fontSize": "12px",
+                                        "fontWeight": "600",
+                                        "color": "rgb(76,114,176)",
+                                    },
+                                ),
+                            ],
+                            style={
+                                "display": "flex",
+                                "alignItems": "center",
+                                "gap": "10px",
+                                "padding": "10px 16px",
+                                "backgroundColor": "rgba(255,255,255,0.92)",
+                                "border": "1px solid #cfd8dc",
+                                "borderRadius": "8px",
+                                "boxShadow": "0 2px 8px rgba(0,0,0,0.08)",
+                            },
+                        ),
                     ),
                 ],
                 id={"type": "plot-container", "label": label},

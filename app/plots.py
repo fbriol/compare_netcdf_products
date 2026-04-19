@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy
 import plotly.graph_objects as go
@@ -15,18 +15,68 @@ _C_SOURCE = "rgb(76,114,176)"  # muted blue
 _C_TARGET = "rgb(196,78,82)"  # muted red
 _C_DIFF = "rgb(85,168,104)"  # muted green
 _C_HIST = "rgb(129,114,179)"  # muted purple
+_C_OVERLAY = "rgb(120,120,120)"  # muted grey for secondary-axis overlay
 _TEMPLATE = "seaborn"
+
+
+def add_comparison_overlay(fig: go.Figure, overlay: dict[str, Any]) -> None:
+    """Add an overlay variable on a secondary y-axis of a comparison figure.
+
+    The overlay is drawn on yaxis2 so its own scale can differ from the
+    primary variable's scale. Legend is enabled so the user can toggle the
+    overlay. The caller is responsible for rescaling ``overlay["x"]`` into
+    the primary plot's index range when sampling rates differ.
+
+    Args:
+        fig: The Signal Comparison figure to mutate.
+        overlay: Dict with keys ``x``, ``y``, ``name``.
+
+    """
+    name = str(overlay.get("name", "Overlay"))
+    fig.add_trace(
+        go.Scattergl(
+            x=overlay["x"],
+            y=overlay["y"],
+            mode="markers",
+            marker={"size": 2, "color": _C_OVERLAY},
+            name=name,
+            yaxis="y2",
+            hovertemplate=("index: %{x}<br>" + name + ": %{y}<extra></extra>"),
+        )
+    )
+    fig.update_layout(
+        showlegend=True,
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.02,
+            "xanchor": "left",
+            "x": 0,
+            "itemsizing": "constant",
+        },
+        yaxis2={
+            "title": name,
+            "overlaying": "y",
+            "side": "right",
+            "showgrid": False,
+            "fixedrange": False,
+        },
+        margin={"l": 60, "r": 60, "t": 10, "b": 40},
+    )
 
 
 def fig_signal_comparison(
     varname: str,
     data_source: DataSource,
+    overlay: dict[str, Any] | None = None,
 ) -> go.Figure:
     """Generate a figure comparing expected and computed signals.
 
     Args:
         varname: The variable name.
         data_source: The data source.
+        overlay: Optional overlay dict (keys ``x``, ``y``, ``name``) drawn on a
+            secondary y-axis so a second variable can be visually compared.
 
     Returns:
         Plotly figure.
@@ -70,6 +120,8 @@ def fig_signal_comparison(
         },
         yaxis_fixedrange=False,
     )
+    if overlay is not None:
+        add_comparison_overlay(fig, overlay)
     return fig
 
 
@@ -429,19 +481,25 @@ def fig_geo_map(
 def build_all_figures(
     varname: str,
     data_source: DataSource,
+    comparison_overlay: dict[str, Any] | None = None,
 ) -> list[tuple[str, go.Figure]]:
     """Build all comparison figures for a variable.
 
     Args:
         varname: The variable name for titles.
         data_source: The DataSource containing all data.
+        comparison_overlay: Optional overlay (``x``/``y``/``name``) rendered on
+            the Signal Comparison plot's secondary y-axis.
 
     Returns:
         List of (label, figure) tuples.
 
     """
     plot_configs: list[tuple[str, go.Figure]] = [
-        ("Signal Comparison", fig_signal_comparison(varname, data_source)),
+        (
+            "Signal Comparison",
+            fig_signal_comparison(varname, data_source, overlay=comparison_overlay),
+        ),
         ("Signal Difference", fig_signal_difference(varname, data_source)),
         ("Scatter Plot", fig_scatter(varname, data_source)),
         ("Histogram", fig_histogram(varname, data_source)),
