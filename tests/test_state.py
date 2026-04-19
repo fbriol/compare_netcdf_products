@@ -10,8 +10,8 @@ import pytest
 from app.state import SessionState
 
 
-def _make_state(**overrides):
-    kwargs = {
+def _make_state(**overrides: MagicMock) -> SessionState:
+    kwargs: dict[str, MagicMock] = {
         "src_path": MagicMock(),
         "tgt_path": MagicMock(),
         "src_ds": MagicMock(),
@@ -52,3 +52,36 @@ def test_lock_is_reentrant() -> None:
     with state.lock, state.lock:
         state.variable_cache["x"] = MagicMock()
     assert "x" in state.variable_cache
+
+
+def test_appcontext_fields_are_read_only() -> None:
+    state = _make_state()
+    with pytest.raises(AttributeError):
+        state.src_path = "something-else"  # type: ignore[misc,assignment]
+
+
+def test_sessions_are_isolated_across_flask_sessions() -> None:
+    import flask
+
+    from app.state import _sessions
+
+    state = _make_state()
+    _sessions.clear()
+
+    app = flask.Flask(__name__)
+    app.secret_key = "test"
+
+    with app.test_request_context():
+        flask.session["sid"] = "tab-a"
+        state.active_expression = "${/x} > 0"
+
+    with app.test_request_context():
+        flask.session["sid"] = "tab-b"
+        # tab-b is freshly seeded from the default; the expression that
+        # tab-a set must not leak across.
+        assert state.active_expression != "${/x} > 0"
+        state.active_expression = "${/y} < 10"
+
+    with app.test_request_context():
+        flask.session["sid"] = "tab-a"
+        assert state.active_expression == "${/x} > 0"

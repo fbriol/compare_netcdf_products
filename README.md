@@ -26,6 +26,8 @@ variables and safe numerical expressions.
 - Export: standalone HTML, CSV report, JSON report.
 - Optional TOML config file for reproducible runs.
 - Shareable URL state (view, group, variable, zoom, filter).
+- Per-tab / per-user session isolation: two browser tabs keep
+  independent filter, navigation and cache state.
 
 ## Installation
 
@@ -70,6 +72,12 @@ Then open <http://localhost:5006>.
 | `--expr EXPRESSION` | Initial filter expression. See *Expression syntax* below. |
 | `--port N` | Port to serve on (default `5006`). |
 | `--debug` | Enable Dash debug mode (auto-reload, verbose errors). |
+
+### Environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `CMP_SECRET_KEY` | Flask session secret. If unset a fresh random key is generated per process, which invalidates existing session cookies on restart. Set it (e.g. `export CMP_SECRET_KEY=$(python -c 'import secrets;print(secrets.token_hex(32))')`) to keep tabs authenticated across restarts. |
 
 Example with flags and an expression filter:
 

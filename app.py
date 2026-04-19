@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import pathlib
+import secrets
 
 import dash
 import netCDF4
@@ -178,6 +180,12 @@ def main() -> None:
             __name__,
             suppress_callback_exceptions=True,
             title="NetCDF Comparison",
+        )
+        # Flask session (backing per-tab SessionData) requires a secret key.
+        # Respect an operator-supplied key if present; otherwise generate
+        # one per-process so cookies survive until restart.
+        dash_app.server.secret_key = os.environ.get(
+            "CMP_SECRET_KEY", secrets.token_hex(32)
         )
         dash_app.layout = create_layout(state)
         register_callbacks(dash_app, state)

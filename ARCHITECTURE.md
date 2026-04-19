@@ -21,7 +21,13 @@ Maintainer-facing overview of the `cmp` NetCDF comparison app. Read
           └─────────┬──────────┘    └──────────┬────────────┘
                     │                          │
                     └───────── reads ──────────┘
-                            SessionState
+                            SessionState  (proxy)
+                                 │
+                 ┌───────────────┴───────────────┐
+                 ▼                               ▼
+          AppContext (shared)        SessionData (per flask.session sid)
+           datasets, paths,           mask, filter, nav, cache,
+           flags, cache size          group_results, RLock
                                  │
                   ┌──────────────┼─────────────────┐
                   ▼              ▼                 ▼
@@ -50,21 +56,38 @@ around `dash_app.run` guarantees the datasets are closed via
 `state.close()` even on startup failure.
 
 ### `app/state.py`
-The `SessionState` dataclass is the single source of truth for a
-running app. It owns:
-- open `netCDF4.Dataset` handles (`src_ds`, `tgt_ds`)
-- cached `GroupComparisonResult` list (`group_results`)
-- an LRU `OrderedDict` of `DataSource` objects (`variable_cache`)
-- the current filter (`active_mask`, `active_expression`,
-  `filter_info`) and navigation state (`current_view`,
-  `current_group_path`, `current_varpath`)
-- a `threading.RLock` protecting cache mutations — Dash's dev server
-  dispatches callbacks in multiple threads.
+State is split in two and surfaced through a thin proxy so existing
+callback code keeps reading/writing `state.x`:
 
-> **Known limitation.** `SessionState` is process-global, so two
-> browser tabs share the same filter/zoom/nav state. The per-session
-> refactor (Item 4 of the improvement plan) splits this into a
-> read-only `AppContext` and a session-keyed `SessionData` map.
+- **`AppContext`** — process-global, read-only. Owns the open
+  `netCDF4.Dataset` handles (`src_ds`, `tgt_ds`), file paths, CLI
+  flags, and the cache-size limit. Shared by every tab.
+- **`SessionData`** — per-session, mutable. Owns the current filter
+  (`active_mask`, `active_expression`, `filter_info`), navigation
+  state (`current_view`, `current_group_path`, `current_varpath`),
+  cached `GroupComparisonResult` list (`group_results`), the
+  per-session LRU `variable_cache`, and an `RLock` guarding cache
+  mutations (Dash's dev server dispatches callbacks in multiple
+  threads).
+- **`SessionState`** — proxy. Reads of session-scoped fields route
+  through `get_session()`; reads of context-scoped fields hit the
+  shared `AppContext`. Assignments to context-scoped fields raise
+  `AttributeError`.
+
+Session lookup uses `flask.session["sid"]` — a UUID set on the first
+request of each browser session. The server's `secret_key` is read
+from `CMP_SECRET_KEY` or generated per process. Outside a request
+context (startup, tests), `get_session()` returns a module-level
+*default* session so initialisation code (`scan_all_groups`, initial
+`--expr`) can mutate state before any browser has connected. New
+sessions are lazily seeded from that default — `group_results` is
+shared by reference (filter changes *reassign* the attribute rather
+than mutating the shared list), while `variable_cache` starts empty
+so tabs don't starve each other.
+
+> **Known limitation.** `_sessions` grows unbounded. Acceptable for
+> the internal-tool deployment profile; a bounded LRU plus a session
+> expiry hook would be the fix for public multi-tenant use.
 
 ### `app/comparison.py`
 Pure data logic — no Dash, no numpy magic. Dataclasses
@@ -197,11 +220,14 @@ utilities).
 
 ## Threading & resource-safety
 
-- `SessionState.lock` is an `RLock` so helpers that take it can call
-  other lock-acquiring helpers without deadlock.
+- `SessionData.lock` is an `RLock` (per session) so helpers that take
+  it can call other lock-acquiring helpers without deadlock.
+- `_sessions_lock` guards the session registry itself (lookup /
+  insertion). Kept minimal to avoid contention.
 - `app.py` wraps `dash_app.run()` in `try/finally` + `state.close()`.
 - `state.close()` closes both datasets even if the first `close()`
-  raises — covered by `tests/test_state.py`.
+  raises, then drops every session — covered by
+  `tests/test_state.py`.
 - netCDF4 handles are read-only and opened once per process. Dash's
   threaded server serves concurrent reads; writes are avoided.
 
@@ -229,15 +255,3 @@ python -m mypy app/` before every PR.
 - No explanatory comments in code — docstrings explain the *why* when
   non-obvious. See the inline feedback rules for what qualifies.
 - Ruff's `E, W, F, I, UP, B, SIM, RUF` rule groups are enabled.
-
-## Known improvement backlog
-
-See `/Users/fredericbriol/.claude/plans/please-first-make-a-melodic-sparkle.md`
-(or the equivalent PR description) for the four-item roadmap:
-
-1. numexpr expression engine — **shipped**.
-2. TOML config + CSV/JSON report export — **shipped**.
-3. Test coverage + stricter typing — **shipped**.
-4. Per-session state — in progress; requires splitting `SessionState`
-   into a read-only `AppContext` and a `dict[session_id, SessionData]`
-   with a bounded LRU.
