@@ -1,4 +1,4 @@
-# cmp — NetCDF Comparison App
+# NetCDF Comparison App
 
 Interactive Dash application for comparing two NetCDF files side-by-side.
 Built for altimetry / SWOT-style hierarchical datasets, but works with any
