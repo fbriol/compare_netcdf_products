@@ -30,9 +30,9 @@ from ..data_loading import load_overlay_for_comparison, load_variable_data
 from ..expression import (
     create_expression_mask,
     find_affected_groups,
-    rewrite_expression,
 )
 from ..plots import add_comparison_overlay, build_all_figures
+from ..report import results_to_csv, results_to_json
 from ..utils import (
     count_diffs,
     count_diffs_recursive,
@@ -139,9 +139,7 @@ def _apply_expression_no_nav(state: SessionState, raw: str):
     Updates state in-place (mask, cache, group_results).
     """
     LOGGER.info("_apply_expression_no_nav: raw=%r", raw)
-    rewritten = rewrite_expression(raw)
-    LOGGER.info("_apply_expression_no_nav: rewritten=%r", rewritten)
-    mask, error = create_expression_mask(state.src_ds, rewritten)
+    mask, error = create_expression_mask(state.src_ds, raw)
     if mask is None:
         LOGGER.error("_apply_expression_no_nav: error=%s", error)
         return (f"Error: {error}", _STATUS_ERR)
@@ -1524,8 +1522,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
 
         # Compute preview: how many points would be masked
         expr = _conditions_to_expression(conditions)
-        rewritten = rewrite_expression(expr)
-        mask, error = create_expression_mask(state.src_ds, rewritten)
+        mask, error = create_expression_mask(state.src_ds, expr)
         if mask is None:
             preview_text = f"Error: {error}"
             preview_style = {
@@ -1881,6 +1878,36 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
             "content": "".join(html_parts),
             "filename": "comparison_export.html",
             "type": "text/html",
+        }
+
+    # ── CSV / JSON report export ──────────────────────────────────
+
+    @app.callback(
+        Output("export-csv-download", "data"),
+        Input("export-csv-btn", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def export_csv(n_clicks):
+        if not n_clicks:
+            return no_update
+        return {
+            "content": results_to_csv(state.group_results),
+            "filename": "comparison_report.csv",
+            "type": "text/csv",
+        }
+
+    @app.callback(
+        Output("export-json-download", "data"),
+        Input("export-json-btn", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def export_json(n_clicks):
+        if not n_clicks:
+            return no_update
+        return {
+            "content": results_to_json(state.group_results),
+            "filename": "comparison_report.json",
+            "type": "application/json",
         }
 
     # ── Share: encode state into URL ──────────────────────────────
