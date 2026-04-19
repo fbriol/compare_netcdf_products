@@ -44,8 +44,11 @@ class Flag:
         label: list[str] = variable.getncattr("flag_meanings").split()
         flag_values: Iterable[float] = variable.getncattr("flag_values").tolist()
 
-        # Build a mapping from flag values to their meanings
-        mapping = dict(zip(flag_values, label, strict=False))
+        # Build a mapping from flag values to their meanings.  strict=True
+        # catches malformed CF metadata where flag_values and flag_meanings
+        # disagree on length — silently dropping entries leads to
+        # KeyError at filter time, far from the root cause.
+        mapping = dict(zip(flag_values, label, strict=True))
 
         # Extract the flag values
         self.values: numpy.ndarray = numpy.ma.filled(variable[:])
