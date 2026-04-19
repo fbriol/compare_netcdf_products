@@ -1,9 +1,17 @@
 """Safe expression evaluation for filtering NetCDF data.
 
 Expression syntax uses ``${/path/to/variable}`` to reference NetCDF
-variables.  Before evaluation the references are rewritten to standard
-``ds['/path/to/variable'][:]`` calls so that the :class:`Expression`
-evaluator can process them.
+variables.  The evaluator is :mod:`numexpr` — safe by construction
+(no attribute access, no Python-level calls, no imports) and 2-5x
+faster than Python-level evaluation on large arrays.
+
+Supported operators and functions follow numexpr's grammar:
+arithmetic (``+ - * / ** %``), comparisons (``== != < <= > >=``),
+bitwise logic (``& | ~``) on boolean arrays, and numexpr builtins
+(``where``, ``sin``, ``cos``, ``exp``, ``log``, ``sqrt``, ``abs``,
+``sum``).  In addition, ``np.isin(x, [a, b, ...])`` is translated to
+``((x == a) | (x == b) | ...)`` automatically so existing filter
+expressions keep working.
 
 Examples::
 
@@ -16,12 +24,12 @@ Examples::
 from __future__ import annotations
 
 import ast
-import dataclasses
 import logging
 import posixpath
 import re
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING
 
+import numexpr
 import numpy
 
 if TYPE_CHECKING:
@@ -31,121 +39,6 @@ LOGGER = logging.getLogger(__name__)
 
 # Regex to match ${/path/to/variable} references in expressions.
 _VAR_REF_RE = re.compile(r"\$\{([^}]+)\}")
-
-
-class NumpyWrapper:
-    """Wrapper that allows restricted access to numpy attributes.
-
-    Only public (non-dunder) numpy attributes are exposed to prevent
-    sandbox escape via ``numpy.__loader__`` / ``numpy.__builtins__``
-    and similar dunder attribute chains.
-    """
-
-    def __getattr__(self, name: str) -> object:
-        """Dynamically access numpy attributes, blocking dunders."""
-        if name.startswith("_"):
-            raise AttributeError(f"Access to private attribute '{name}' is not allowed")
-        if hasattr(numpy, name):
-            attr = getattr(numpy, name)
-            if callable(attr) or isinstance(
-                attr, (int, float, complex, bool, numpy.number)
-            ):
-                return attr
-        raise AttributeError(
-            f"'{self.__class__.__name__}' object has no attribute '{name}'"
-        )
-
-
-@dataclasses.dataclass
-class Expression:
-    """Partitioning expressions.
-
-    Args:
-        expression: The expression to be evaluated.
-
-    Raises:
-        NameError: If a variable is not defined.
-
-    """
-
-    __slots__ = ("code", "expr")
-
-    code: Any
-    expr: str
-
-    BUILTINS: ClassVar[dict[str, Any]] = {
-        "range": range,
-        "len": len,
-        "abs": abs,
-        "min": min,
-        "max": max,
-        "sum": sum,
-        "any": any,
-        "all": all,
-        "np": NumpyWrapper(),
-    }
-
-    # AST node types that are forbidden in user expressions to prevent
-    # arbitrary code execution via the sandboxed eval().  Note: no
-    # Import/ImportFrom since those are statements and already rejected
-    # by mode="eval".  Attribute access is validated per-node below.
-    _FORBIDDEN_NODES: ClassVar[tuple[type[ast.AST], ...]] = (
-        ast.Lambda,
-        ast.FunctionDef,
-        ast.AsyncFunctionDef,
-        ast.ClassDef,
-        ast.Global,
-        ast.Nonlocal,
-        ast.Yield,
-        ast.YieldFrom,
-        ast.Await,
-        ast.NamedExpr,
-    )
-
-    def __init__(self, expr: str) -> None:
-        self.expr = expr
-        parsed = ast.parse(expr, mode="eval")
-        self._validate(parsed)
-        self.code = compile(parsed, " ", "eval")
-
-    @classmethod
-    def _validate(cls, tree: ast.AST) -> None:
-        """Reject AST nodes that could break the sandbox.
-
-        Blocks lambdas, function/class definitions, walrus, and any
-        attribute access to dunder names (e.g. ``np.__class__``) that
-        could be used to escape the restricted namespace.
-        """
-        for node in ast.walk(tree):
-            if isinstance(node, cls._FORBIDDEN_NODES):
-                raise SyntaxError(
-                    f"Expression uses forbidden construct: {type(node).__name__}"
-                )
-            if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
-                raise SyntaxError(
-                    f"Access to private attribute '{node.attr}' is not allowed"
-                )
-            if isinstance(node, ast.Name) and node.id.startswith("__"):
-                raise SyntaxError(f"Access to dunder name '{node.id}' is not allowed")
-
-    def __call__(self, variables: dict[str, Any]) -> object:
-        try:
-            parsed = ast.parse(self.expr, mode="eval")
-            variable_names = set()
-            builtins_set = self.BUILTINS
-
-            class NameExtractor(ast.NodeVisitor):
-                def visit_Name(self, node: ast.Name) -> None:
-                    if node.id not in builtins_set:
-                        variable_names.add(node.id)
-                    self.generic_visit(node)
-
-            NameExtractor().visit(parsed)
-
-            __locals = {name: variables[name] for name in variable_names}
-            return eval(self.code, {"__builtins__": self.BUILTINS}, __locals)
-        except KeyError as err:
-            raise NameError(f"name {err!s} is not defined") from err
 
 
 # ── Variable reference helpers ───────────────────────────────────────
@@ -158,36 +51,100 @@ def parse_variable_refs(expr: str) -> list[str]:
         expr: Expression string with ``${/path}`` references.
 
     Returns:
-        List of variable paths found in the expression.
+        List of variable paths found in the expression (may contain
+        duplicates; callers that need unique paths should deduplicate).
 
     """
     return _VAR_REF_RE.findall(expr)
 
 
-def rewrite_expression(expr: str) -> str:
-    """Rewrite ``${/path}`` references to ``ds['/path'][:]``.
+def rewrite_expression(expr: str) -> tuple[str, dict[str, str]]:
+    """Rewrite a user expression into a numexpr-ready string.
+
+    Substitutes every ``${/path}`` reference with a placeholder
+    identifier (``v0``, ``v1``, …) and translates the sole supported
+    numpy helper ``np.isin(x, [a, b, …])`` into
+    ``((x == a) | (x == b) | …)``.
 
     Args:
         expr: User-written expression with ``${...}`` syntax.
 
     Returns:
-        Expression ready for the :class:`Expression` evaluator.
+        Tuple ``(ne_expr, placeholders)`` where ``ne_expr`` is the
+        numexpr-compatible expression and ``placeholders`` maps each
+        placeholder name back to its variable path.
 
     """
-    return _VAR_REF_RE.sub(r"ds['\1'][:]", expr)
+    placeholders: dict[str, str] = {}
+    path_to_name: dict[str, str] = {}
+
+    def _substitute(match: re.Match[str]) -> str:
+        path = match.group(1)
+        if path not in path_to_name:
+            name = f"v{len(path_to_name)}"
+            path_to_name[path] = name
+            placeholders[name] = path
+        return path_to_name[path]
+
+    substituted = _VAR_REF_RE.sub(_substitute, expr)
+    # ``np.isin`` is the only non-numexpr helper actually used in
+    # real expressions in this project; translate it before handing
+    # the string to numexpr.
+    rewritten = _rewrite_numpy_isin(substituted)
+    return rewritten, placeholders
+
+
+class _IsInTransformer(ast.NodeTransformer):
+    """Rewrite ``np.isin(x, [a, b, c])`` → ``((x==a) | (x==b) | (x==c))``."""
+
+    def visit_Call(self, node: ast.Call) -> ast.AST:
+        self.generic_visit(node)
+        func = node.func
+        is_isin = (
+            isinstance(func, ast.Attribute)
+            and isinstance(func.value, ast.Name)
+            and func.value.id == "np"
+            and func.attr == "isin"
+        )
+        if not is_isin or len(node.args) != 2:
+            return node
+        arr, values = node.args
+        if not isinstance(values, ast.List | ast.Tuple) or not values.elts:
+            return node
+
+        def _eq(value: ast.expr) -> ast.Compare:
+            return ast.Compare(left=arr, ops=[ast.Eq()], comparators=[value])
+
+        result: ast.expr = _eq(values.elts[0])
+        for elt in values.elts[1:]:
+            result = ast.BinOp(left=result, op=ast.BitOr(), right=_eq(elt))
+        return result
+
+
+def _rewrite_numpy_isin(expr: str) -> str:
+    """Replace ``np.isin(x, [a, b, c])`` calls with equivalent bitwise ORs.
+
+    Operates on the AST to avoid regex pitfalls with nested brackets.
+    If the string cannot be parsed the original expression is returned
+    so numexpr can produce the appropriate error.
+    """
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError:
+        return expr
+    transformed = _IsInTransformer().visit(tree)
+    ast.fix_missing_locations(transformed)
+    return ast.unparse(transformed)
 
 
 def find_affected_groups(expr: str) -> set[str]:
-    """Determine which NetCDF groups are affected by the expression.
-
-    Extracts the group paths from the variable references in the
-    expression.  No hardcoded group list is needed.
+    """Determine which top-level NetCDF groups are referenced.
 
     Args:
         expr: Expression with ``${/path}`` references.
 
     Returns:
-        Set of group paths (e.g., ``{'data_01', 'data_20'}``).
+        Set of top-level group names (e.g., ``{'data_01', 'data_20'}``).
 
     """
     refs = parse_variable_refs(expr)
@@ -197,44 +154,60 @@ def find_affected_groups(expr: str) -> set[str]:
         parent = posixpath.dirname(ref).lstrip("/")
         if parent:
             # Keep only the top-level group (first component)
-            top_level = parent.split("/")[0]
-            groups.add(top_level)
+            groups.add(parent.split("/")[0])
     return groups
 
 
 # ── Mask creation ────────────────────────────────────────────────────
 
 
+def _load_variable(dataset: netCDF4.Dataset, path: str) -> numpy.ndarray:
+    """Read a variable at a path like ``/data_01/altitude``."""
+    return numpy.asarray(dataset[path][:])
+
+
 def create_expression_mask(
     dataset: netCDF4.Dataset, expr: str
 ) -> tuple[numpy.ndarray | None, str | None]:
-    """Create a boolean mask from an expression.
+    """Create a boolean mask from a user expression.
 
-    The *expr* should already be in evaluable form (i.e. the
-    ``${...}`` references must have been rewritten via
-    :func:`rewrite_expression` before calling this function).
+    Accepts either a raw user expression containing ``${/path}``
+    references or a pre-rewritten numexpr string.  When references
+    are present the expression is rewritten internally so callers
+    do not need to call :func:`rewrite_expression` first.
 
     Args:
         dataset: The NetCDF dataset to evaluate against.
-        expr: The rewritten expression string.
+        expr: The expression string.
 
     Returns:
         Tuple of ``(mask, None)`` on success or ``(None, error)``
         on failure.
 
     """
-    try:
-        expression = Expression(expr)
-    except SyntaxError as e:
-        return None, f"Invalid expression '{expr}': {e}"
+    if "${" in expr:
+        ne_expr, placeholders = rewrite_expression(expr)
+    else:
+        ne_expr, placeholders = expr, {}
 
-    var_data = {"ds": dataset}
     try:
-        mask = expression(var_data)
-        assert isinstance(mask, numpy.ndarray) and mask.dtype == bool
-        return mask, None
-    except Exception as e:
-        return None, f"Error evaluating expression '{expr}': {e}"
+        local_dict = {
+            name: _load_variable(dataset, path) for name, path in placeholders.items()
+        }
+    except Exception as exc:
+        return None, f"Could not load variable for expression '{expr}': {exc}"
+
+    try:
+        result = numexpr.evaluate(ne_expr, local_dict=local_dict)
+    except Exception as exc:
+        return None, f"Error evaluating expression '{expr}': {exc}"
+
+    if not isinstance(result, numpy.ndarray) or result.dtype != bool:
+        return None, (
+            f"Expression '{expr}' did not produce a boolean mask "
+            f"(got dtype={getattr(result, 'dtype', type(result).__name__)})"
+        )
+    return result, None
 
 
 # ── Variable listing ─────────────────────────────────────────────────
