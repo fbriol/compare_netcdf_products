@@ -772,6 +772,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         try:
             data_source = load_variable_data(state, varpath)
         except Exception:
+            LOGGER.exception("Failed to load variable data for %s", varpath)
             return [no_update] * n
 
         overlay = (
@@ -1363,6 +1364,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
             vmax = numpy.nanmax(vals)
             return f"Range: {vmin:.6g} .. {vmax:.6g}  ({len(vals):,} pts)"
         except Exception:
+            LOGGER.exception("Failed to compute range hint for filter variable")
             return ""
 
     # ── Filter: add condition ──────────────────────────────────────
@@ -1632,6 +1634,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         try:
             data_source = load_variable_data(state, varpath)
         except Exception:
+            LOGGER.exception("Failed to load variable data for %s", varpath)
             return ([no_update] * n_graphs, no_update, no_update, no_update)
 
         if not data_source.flags:
