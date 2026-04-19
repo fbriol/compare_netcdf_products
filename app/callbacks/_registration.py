@@ -47,6 +47,19 @@ from .views import (
 LOGGER = logging.getLogger(__name__)
 
 
+# Outlier marker sizing.  Outliers must remain visibly larger than the
+# regular points even when the user shrinks the marker size; keep the
+# same rule in sync with the clientside marker-size callback.
+_OUTLIER_MIN_SIZE = 6
+_OUTLIER_OFFSET = 4
+
+
+def _outlier_size(marker_size: int | None) -> int:
+    """Return the marker size to use for outlier traces."""
+    base = marker_size or 2
+    return max(_OUTLIER_MIN_SIZE, base + _OUTLIER_OFFSET)
+
+
 # Backwards-compatible aliases (used internally with underscore prefix)
 _find_group_result = find_group_result
 _navigate_to_group = navigate_to_group
@@ -571,7 +584,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                     y=expected_arr[outlier_mask],
                     mode="markers",
                     marker={
-                        "size": 6,
+                        "size": _outlier_size(marker_size),
                         "color": "orange",
                         "symbol": "diamond",
                         "line": {"width": 1, "color": "red"},
@@ -587,7 +600,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                     y=computed_arr[outlier_mask],
                     mode="markers",
                     marker={
-                        "size": 6,
+                        "size": _outlier_size(marker_size),
                         "color": "yellow",
                         "symbol": "diamond",
                         "line": {"width": 1, "color": "red"},
@@ -637,7 +650,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                     y=diff_arr[outlier_mask],
                     mode="markers",
                     marker={
-                        "size": 6,
+                        "size": _outlier_size(marker_size),
                         "color": "orange",
                         "symbol": "diamond",
                         "line": {"width": 1, "color": "red"},
@@ -834,7 +847,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                     y=expected_full[o_mask],
                     mode="markers",
                     marker={
-                        "size": 6,
+                        "size": _outlier_size(marker_size),
                         "color": "orange",
                         "symbol": "diamond",
                         "line": {"width": 1, "color": "red"},
@@ -850,7 +863,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                     y=computed_full[o_mask],
                     mode="markers",
                     marker={
-                        "size": 6,
+                        "size": _outlier_size(marker_size),
                         "color": "yellow",
                         "symbol": "diamond",
                         "line": {"width": 1, "color": "red"},
@@ -903,21 +916,42 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
     # For now the slider updates are handled via a clientside callback
     # that patches the figure data directly.
 
+    # Outlier markers should always stay visually distinct from the
+    # regular points: keep them at least OUTLIER_MIN_SIZE and a few px
+    # larger than the current marker size, even if the user shrinks
+    # markers via the slider.
     app.clientside_callback(
         """
         function(markerSize) {
-            // Find all dcc.Graph components and update marker size
+            var OUTLIER_MIN_SIZE = 6;
+            var OUTLIER_OFFSET = 4;
+            var outlierSize = Math.max(
+                OUTLIER_MIN_SIZE, markerSize + OUTLIER_OFFSET
+            );
             var graphs = document.querySelectorAll('.js-plotly-plot');
             graphs.forEach(function(graphDiv) {
-                if (graphDiv.data) {
-                    var update = {};
-                    for (var i = 0; i < graphDiv.data.length; i++) {
-                        if (graphDiv.data[i].mode === 'markers') {
-                            update['marker.size'] = markerSize;
-                            Plotly.restyle(graphDiv, {'marker.size': markerSize});
-                            break;
-                        }
+                if (!graphDiv.data) return;
+                var regularIdx = [];
+                var outlierIdx = [];
+                for (var i = 0; i < graphDiv.data.length; i++) {
+                    var trace = graphDiv.data[i];
+                    if (trace.mode !== 'markers') continue;
+                    var name = (trace.name || '').toLowerCase();
+                    if (name.indexOf('outlier') !== -1) {
+                        outlierIdx.push(i);
+                    } else {
+                        regularIdx.push(i);
                     }
+                }
+                if (regularIdx.length > 0) {
+                    Plotly.restyle(
+                        graphDiv, {'marker.size': markerSize}, regularIdx
+                    );
+                }
+                if (outlierIdx.length > 0) {
+                    Plotly.restyle(
+                        graphDiv, {'marker.size': outlierSize}, outlierIdx
+                    );
                 }
             });
             return window.dash_clientside.no_update;
@@ -1174,7 +1208,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                             y=exp_full[o_mask],
                             mode="markers",
                             marker={
-                                "size": 6,
+                                "size": _outlier_size(marker_size),
                                 "color": "orange",
                                 "symbol": "diamond",
                                 "line": {"width": 1, "color": "red"},
@@ -1190,7 +1224,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                             y=comp_full[o_mask],
                             mode="markers",
                             marker={
-                                "size": 6,
+                                "size": _outlier_size(marker_size),
                                 "color": "yellow",
                                 "symbol": "diamond",
                                 "line": {"width": 1, "color": "red"},
@@ -1247,7 +1281,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                             y=diff_arr[o_mask],
                             mode="markers",
                             marker={
-                                "size": 6,
+                                "size": _outlier_size(marker_size),
                                 "color": "orange",
                                 "symbol": "diamond",
                                 "line": {"width": 1, "color": "red"},
@@ -1622,9 +1656,17 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         State({"type": "plot-graph", "label": ALL}, "id"),
         State("outlier-sigma-slider", "value"),
         State("nav-overlay-varpath", "data"),
+        State("marker-size-slider", "value"),
         prevent_initial_call=True,
     )
-    def apply_flag_filter(selected_flags, varpath, graph_ids, n_sigma, overlay_varpath):
+    def apply_flag_filter(
+        selected_flags,
+        varpath,
+        graph_ids,
+        n_sigma,
+        overlay_varpath,
+        marker_size,
+    ):
         import numpy
 
         n_graphs = len(graph_ids) if graph_ids else 0
@@ -1690,7 +1732,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                     y=expected_arr[outlier_mask],
                     mode="markers",
                     marker={
-                        "size": 6,
+                        "size": _outlier_size(marker_size),
                         "color": "orange",
                         "symbol": "diamond",
                         "line": {"width": 1, "color": "red"},
@@ -1707,7 +1749,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                     y=computed_arr[outlier_mask],
                     mode="markers",
                     marker={
-                        "size": 6,
+                        "size": _outlier_size(marker_size),
                         "color": "yellow",
                         "symbol": "diamond",
                         "line": {"width": 1, "color": "red"},
@@ -1725,7 +1767,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                     y=diff_arr[outlier_mask],
                     mode="markers",
                     marker={
-                        "size": 6,
+                        "size": _outlier_size(marker_size),
                         "color": "orange",
                         "symbol": "diamond",
                         "line": {"width": 1, "color": "red"},
