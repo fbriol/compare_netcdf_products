@@ -172,10 +172,14 @@ level = "INFO"
 ## Running the tests
 
 ```bash
+pip install -e ".[dev]"
+pre-commit install            # first time only
+pre-commit run --all-files    # ruff (+autofix), ruff-format, mypy
 python -m pytest tests/ -q
-python -m ruff check app/ tests/
-python -m mypy app/
 ```
+
+`pre-commit` manages pinned versions of `ruff` and `mypy` in
+`.pre-commit-config.yaml`, so you don't need to install them separately.
 
 ## Project layout
 
