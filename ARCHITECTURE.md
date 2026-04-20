@@ -1,6 +1,6 @@
 # Architecture
 
-Maintainer-facing overview of the `cmp` NetCDF comparison app. Read
+Maintainer-facing overview of the `ncjuxta` NetCDF comparison app. Read
 [README.md](README.md) first for user-facing behaviour.
 
 ## Bird's-eye view
@@ -76,7 +76,7 @@ callback code keeps reading/writing `state.x`:
 
 Session lookup uses `flask.session["sid"]` — a UUID set on the first
 request of each browser session. The server's `secret_key` is read
-from `CMP_SECRET_KEY` or generated per process. Outside a request
+from `NCJUXTA_SECRET_KEY` or generated per process. Outside a request
 context (startup, tests), `get_session()` returns a module-level
 *default* session so initialisation code (`scan_all_groups`, initial
 `--expr`) can mutate state before any browser has connected. New

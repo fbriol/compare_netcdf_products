@@ -651,7 +651,7 @@ def create_layout(state: SessionState) -> html.Div:
                                                 "border": "3px solid #cfd8dc",
                                                 "borderTopColor": "rgb(76,114,176)",
                                                 "borderRadius": "50%",
-                                                "animation": "cmp-spin 0.8s"
+                                                "animation": "ncjuxta-spin 0.8s"
                                                 " linear infinite",
                                             },
                                         ),

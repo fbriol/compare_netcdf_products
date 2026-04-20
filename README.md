@@ -34,8 +34,8 @@ variables and safe numerical expressions.
 Requires **Python ≥ 3.12**.
 
 ```bash
-git clone <this-repo> cmp
-cd cmp
+git clone <this-repo> ncjuxta
+cd ncjuxta
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
@@ -77,7 +77,7 @@ Then open <http://localhost:5006>.
 
 | Variable | Description |
 |----------|-------------|
-| `CMP_SECRET_KEY` | Flask session secret. If unset a fresh random key is generated per process, which invalidates existing session cookies on restart. Set it (e.g. `export CMP_SECRET_KEY=$(python -c 'import secrets;print(secrets.token_hex(32))')`) to keep tabs authenticated across restarts. |
+| `NCJUXTA_SECRET_KEY` | Flask session secret. If unset a fresh random key is generated per process, which invalidates existing session cookies on restart. Set it (e.g. `export NCJUXTA_SECRET_KEY=$(python -c 'import secrets;print(secrets.token_hex(32))')`) to keep tabs authenticated across restarts. |
 
 Example with flags and an expression filter:
 
@@ -198,7 +198,7 @@ app/                # application package
 ├── report.py       # CSV / JSON report serializers
 ├── state.py        # SessionState (datasets, cache, nav state)
 └── utils.py        # small helpers
-assets/cmp.css      # stylesheet auto-loaded by Dash
+assets/ncjuxta.css  # stylesheet auto-loaded by Dash
 tests/              # pytest suite
 ```
 

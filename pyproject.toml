@@ -1,5 +1,5 @@
 [project]
-name = "cmp"
+name = "ncjuxta"
 version = "0.1.0"
 description = "Interactive Dash application for comparing two NetCDF files."
 readme = "README.md"

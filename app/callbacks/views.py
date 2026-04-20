@@ -1354,7 +1354,7 @@ def build_detail_view(state, varpath, zoom_range=None):
                                         "border": "3px solid #cfd8dc",
                                         "borderTopColor": "rgb(76,114,176)",
                                         "borderRadius": "50%",
-                                        "animation": "cmp-spin 0.8s linear infinite",
+                                        "animation": "ncjuxta-spin 0.8s linear infinite",
                                     },
                                 ),
                                 html.Span(
