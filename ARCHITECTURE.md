@@ -244,8 +244,10 @@ utilities).
   `test_config.py`, `test_report.py` — new coverage for the
   previously-untested modules plus config & report round-trips.
 
-Run `python -m pytest tests/ -q && python -m ruff check app/ tests/ &&
-python -m mypy app/` before every PR.
+Run `pre-commit run --all-files && python -m pytest tests/ -q` before
+every PR — `ruff` (with autofix + formatting) and `mypy` are pinned in
+`.pre-commit-config.yaml` and driven by `pre-commit`, not invoked
+directly.
 
 ## Conventions
 
