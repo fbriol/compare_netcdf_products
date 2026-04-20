@@ -9,6 +9,7 @@ repos:
     rev: v1.16.0
     hooks:
       - id: mypy
+        files: ^app/
         additional_dependencies:
           - numpy
         args: [--config-file=pyproject.toml]
