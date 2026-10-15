@@ -71,6 +71,7 @@ def test_detail_view_contains_panel(annotated_state) -> None:
     _, content = render_current_view(annotated_state, visible_plots=["Histogram"])
     text = str(content)
     assert "annotation-panel" in text and "Speed differs" in text
+    assert "ncj-fullscreen-btn" in text
     assert "ann-new-for-var" in text
     panel = build_annotation_panel(annotated_state, "/data_01/altitude")
     assert "No annotation covers" in str(panel)

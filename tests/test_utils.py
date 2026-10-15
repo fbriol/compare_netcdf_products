@@ -100,3 +100,9 @@ class TestCountDiffsRecursive:
         n_diff, n_total = count_diffs_recursive(state, src_ds, "/")
         assert n_diff == 1
         assert n_total == 3
+
+
+def test_static_script_is_packaged() -> None:
+    from app.utils import static_script
+
+    assert "requestFullscreen" in static_script("fullscreen.js")

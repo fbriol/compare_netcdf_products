@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.resources
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -9,6 +10,19 @@ if TYPE_CHECKING:
 
     from .comparison import GroupComparisonResult
     from .state import SessionState
+
+
+#: URL under which the Dash server serves :func:`static_script` files.
+STATIC_URL = "/_ncjuxta/static/"
+
+
+def static_script(name: str) -> str:
+    """Return the source of a script shipped in ``app/static``."""
+    return (
+        importlib.resources.files("app")
+        .joinpath("static", name)
+        .read_text(encoding="utf-8")
+    )
 
 
 def find_group_result(

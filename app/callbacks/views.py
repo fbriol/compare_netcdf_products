@@ -1387,10 +1387,19 @@ def build_detail_view(state, varpath, zoom_range=None, visible_plots=None):
         content.append(
             html.Div(
                 [
-                    html.H4(
-                        label,
+                    html.Div(
+                        [
+                            html.H4(label, style={"color": "#455a64", "margin": "0"}),
+                            html.Button(
+                                "\u26f6",
+                                title="Full screen (Esc to exit)",
+                                className="ncj-fullscreen-btn",
+                            ),
+                        ],
                         style={
-                            "color": "#455a64",
+                            "display": "flex",
+                            "alignItems": "center",
+                            "justifyContent": "space-between",
                             "margin": "0 0 4px 0",
                             "borderBottom": "1px solid #e0e0e0",
                             "paddingBottom": "4px",
@@ -1450,6 +1459,7 @@ def build_detail_view(state, varpath, zoom_range=None, visible_plots=None):
                     ),
                 ],
                 id={"type": "plot-container", "label": label},
+                className="ncj-plot-container",
                 style={"marginBottom": "16px"} if visible else {"display": "none"},
             )
         )

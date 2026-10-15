@@ -179,6 +179,9 @@ annotated report. Variables without `scale_factor` are compared exactly.
   a variable marked *Different* or *Almost equal* to open its plots.
 - **Plot view**:
   - Tick the plots you want to display from the *Visible* row.
+  - The **⛶** button next to a plot title shows it full screen (handy for
+    the geographical map); press **Esc** to exit. The annotated report has
+    the same button.
   - **⚙ Settings** reveals marker-size, outlier-threshold and overlay
     controls.
   - Use the outlier badge to gauge how many points exceed the N×σ
