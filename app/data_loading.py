@@ -472,6 +472,65 @@ def _find_coordinates(
     return None, None
 
 
+def build_data_source(
+    src_ds: netCDF4.Dataset,
+    tgt_ds: netCDF4.Dataset,
+    varpath: str,
+    mask: numpy.ndarray | None = None,
+    flags: list[Flag] | None = None,
+) -> DataSource:
+    """Read a variable from both datasets and wrap it in a DataSource.
+
+    Session-free counterpart of :func:`load_variable_data`, used by the
+    report builder to render a variable under an arbitrary mask.
+
+    Args:
+        src_ds: Source dataset.
+        tgt_ds: Target dataset.
+        varpath: Full path to the variable (e.g., '/data_01/altitude').
+        mask: Optional boolean mask; ignored when its shape differs from
+            the variable's.
+        flags: Flag variables; only those in the variable's group are kept.
+
+    Returns:
+        DataSource for the requested variable.
+
+    """
+    src_var = _navigate_to_variable(src_ds, varpath)
+    tgt_var = _navigate_to_variable(tgt_ds, varpath)
+
+    src_val = src_var[:]
+    tgt_val = tgt_var[:]
+    LOGGER.info("build_data_source: raw data shape=%s", src_val.shape)
+
+    if mask is not None:
+        if src_val.shape == mask.shape:
+            LOGGER.info(
+                "build_data_source: applying mask (sum=%d/%d)",
+                int(mask.sum()),
+                int(mask.size),
+            )
+            src_val = _apply_mask(src_val, mask)
+            tgt_val = _apply_mask(tgt_val, mask)
+        else:
+            LOGGER.info(
+                "build_data_source: mask size %d != data size %d, skipping mask for %s",
+                mask.size,
+                src_val.size,
+                varpath,
+            )
+
+    relevant_flags = None
+    if flags:
+        relevant_flags = [f for f in flags if f.is_in_current_group(varpath)] or None
+
+    longitude, latitude = _find_coordinates(src_ds, varpath, src_val.shape, mask)
+
+    return DataSource(
+        src_val, tgt_val, relevant_flags, longitude=longitude, latitude=latitude
+    )
+
+
 def load_variable_data(
     state: SessionState,
     varpath: str,
@@ -497,53 +556,8 @@ def load_variable_data(
 
     LOGGER.info("load_variable_data: CACHE MISS for %s", varpath)
 
-    # Navigate to the variable in both datasets
-    src_var = _navigate_to_variable(state.src_ds, varpath)
-    tgt_var = _navigate_to_variable(state.tgt_ds, varpath)
-
-    src_val = src_var[:]
-    tgt_val = tgt_var[:]
-    LOGGER.info("load_variable_data: raw data shape=%s", src_val.shape)
-
-    # Apply expression mask if active (skip if sizes don't match)
-    if state.active_mask is not None:
-        if src_val.shape == state.active_mask.shape:
-            LOGGER.info(
-                "load_variable_data: applying mask (sum=%d/%d)",
-                int(state.active_mask.sum()),
-                int(state.active_mask.size),
-            )
-            src_val = _apply_mask(src_val, state.active_mask)
-            tgt_val = _apply_mask(tgt_val, state.active_mask)
-            LOGGER.info(
-                "load_variable_data: after mask, valid points=%d",
-                int((~numpy.ma.getmaskarray(src_val)).sum()),
-            )
-        else:
-            LOGGER.info(
-                "load_variable_data: mask size %d != data size %d, "
-                "skipping mask for %s",
-                state.active_mask.size,
-                src_val.size,
-                varpath,
-            )
-    else:
-        LOGGER.info("load_variable_data: NO active mask")
-
-    # Get relevant flags for this variable's group
-    relevant_flags = None
-    if state.flags:
-        relevant_flags = [f for f in state.flags if f.is_in_current_group(varpath)]
-        if not relevant_flags:
-            relevant_flags = None
-
-    # Extract lon/lat coordinates
-    longitude, latitude = _find_coordinates(
-        state.src_ds, varpath, src_val.shape, state.active_mask
-    )
-
-    ds = DataSource(
-        src_val, tgt_val, relevant_flags, longitude=longitude, latitude=latitude
+    ds = build_data_source(
+        state.src_ds, state.tgt_ds, varpath, state.active_mask, state.flags
     )
 
     # Cache with eviction (another thread may have populated the entry

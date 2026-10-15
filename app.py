@@ -18,9 +18,10 @@ import secrets
 import dash
 import netCDF4
 
+from app.annotations import AnnotationError, AnnotationStore
 from app.callbacks import register_callbacks
 from app.comparison import FilterInfo, scan_all_groups
-from app.config import AppConfig, load_config
+from app.config import AppConfig, apply_config_defaults, load_config
 from app.expression import (
     create_expression_mask,
     find_affected_groups,
@@ -69,27 +70,29 @@ def parse_args() -> argparse.Namespace:
         help="Port to serve the application on (default: 5006).",
     )
     parser.add_argument(
+        "--tolerance-steps",
+        type=float,
+        default=None,
+        help="Differences up to N storage steps (scale_factor) are classified "
+        "'almost equal' (default: 1.5).",
+    )
+    parser.add_argument(
+        "--annotations",
+        type=str,
+        default=None,
+        help="Annotation JSON file to display and edit (created if missing).",
+    )
+    parser.add_argument(
+        "--annotations-readonly",
+        action="store_true",
+        help="Display the annotations without the editing controls.",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Enable Dash debug mode.",
     )
     return parser.parse_args()
-
-
-def _apply_config_defaults(args: argparse.Namespace, config: AppConfig) -> None:
-    """Fill argparse defaults from the TOML config (CLI takes precedence)."""
-    if args.source is None:
-        args.source = config.paths.source
-    if args.target is None:
-        args.target = config.paths.target
-    if args.expr is None:
-        args.expr = config.filter.expression
-    if not args.flag:
-        args.flag = list(config.filter.flags) or None
-    if args.port is None:
-        args.port = config.server.port
-    if not args.debug:
-        args.debug = config.server.debug
 
 
 def build_session_state(
@@ -125,6 +128,16 @@ def build_session_state(
         else:
             LOGGER.error("Expression error: %s", error)
 
+    annotations = None
+    if args.annotations:
+        LOGGER.info("Loading annotations: %s", args.annotations)
+        try:
+            annotations = AnnotationStore(
+                args.annotations, readonly=args.annotations_readonly
+            )
+        except (AnnotationError, FileNotFoundError) as exc:
+            raise SystemExit(f"Cannot load annotations: {exc}") from exc
+
     # Create the session state object
     state = SessionState(
         src_path=src_path,
@@ -135,11 +148,19 @@ def build_session_state(
         active_mask=active_mask,
         active_expression=active_expression,
         filter_info=filter_info,
+        annotations=annotations,
+        tolerance_steps=args.tolerance_steps,
     )
 
     # Initial scan of groups to populate the state with comparison results
     LOGGER.info("Scanning groups...")
-    state.group_results = scan_all_groups(src_ds, tgt_ds, filter_info, mask=active_mask)
+    state.group_results = scan_all_groups(
+        src_ds,
+        tgt_ds,
+        filter_info,
+        mask=active_mask,
+        tolerance_steps=args.tolerance_steps,
+    )
     return state
 
 
@@ -152,7 +173,7 @@ def main() -> None:
     args = parse_args()
 
     config = load_config(args.config) if args.config else AppConfig()
-    _apply_config_defaults(args, config)
+    apply_config_defaults(args, config)
 
     if args.source is None or args.target is None:
         raise SystemExit(

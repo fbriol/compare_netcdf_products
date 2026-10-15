@@ -458,6 +458,58 @@ def build_expression_panel(state: SessionState) -> html.Div:
     )
 
 
+def build_annotation_controls(state: SessionState) -> list:
+    """Sidebar block for the annotation file (empty without ``--annotations``)."""
+    from .annotations import AnnotationStore
+
+    store = getattr(state, "annotations", None)
+    if not isinstance(store, AnnotationStore):
+        return []
+    button = {
+        "width": "100%",
+        "color": "white",
+        "border": "none",
+        "borderRadius": "4px",
+        "padding": "8px",
+        "cursor": "pointer",
+        "fontSize": "13px",
+        "marginBottom": "8px",
+    }
+    return [
+        html.Hr(style={"margin": "12px 0"}),
+        html.Div(
+            "Annotations",
+            style={
+                "color": "#37474f",
+                "fontWeight": "600",
+                "fontSize": "13px",
+                "letterSpacing": "0.5px",
+                "textTransform": "uppercase",
+                "marginBottom": "8px",
+            },
+        ),
+        html.Div(
+            store.path.name,
+            title=str(store.path),
+            style={"fontSize": "11px", "color": "#607d8b", "marginBottom": "6px"},
+        ),
+        html.Button(
+            "Export annotated report (HTML)",
+            id="export-annotated-btn",
+            n_clicks=0,
+            style={**button, "backgroundColor": "#8e6c00"},
+        ),
+        dcc.Download(id="export-annotated-download"),
+        html.Button(
+            "Reload annotations from disk",
+            id="ann-reload-btn",
+            n_clicks=0,
+            style={**button, "backgroundColor": "#78909c"},
+        ),
+        html.Div(id="ann-sidebar-msg", style={"fontSize": "11px"}),
+    ]
+
+
 def create_layout(state: SessionState) -> html.Div:
     """Build the full Dash layout.
 
@@ -477,6 +529,7 @@ def create_layout(state: SessionState) -> html.Div:
             dcc.Store(id="nav-overlay-varpath", data=None),
             dcc.Store(id="zoom-range", data=None),
             dcc.Store(id="url-initial-load", data=True),
+            dcc.Store(id="ann-revision", data=0),
             dcc.Location(id="url-location", refresh=False),
             # ── Body: sidebar + main ───────────────────────────────────
             html.Div(
@@ -538,6 +591,7 @@ def create_layout(state: SessionState) -> html.Div:
                                 },
                             ),
                             dcc.Download(id="export-json-download"),
+                            *build_annotation_controls(state),
                             html.Hr(style={"margin": "12px 0"}),
                             build_expression_panel(state),
                         ],
@@ -593,6 +647,27 @@ def create_layout(state: SessionState) -> html.Div:
                                             html.Div(
                                                 id="filter-banner",
                                                 style={"display": "none"},
+                                            ),
+                                            *(
+                                                [
+                                                    html.Button(
+                                                        "\U0001f4dd Annotations",
+                                                        id="annotations-nav-btn",
+                                                        n_clicks=0,
+                                                        style={
+                                                            "border": "1px solid #fbc02d",
+                                                            "borderRadius": "4px",
+                                                            "padding": "4px 10px",
+                                                            "backgroundColor": "#fffde7",
+                                                            "color": "#8e6c00",
+                                                            "cursor": "pointer",
+                                                            "fontSize": "11px",
+                                                            "whiteSpace": "nowrap",
+                                                        },
+                                                    )
+                                                ]
+                                                if build_annotation_controls(state)
+                                                else []
                                             ),
                                             html.Button(
                                                 "\U0001f517 Share",

@@ -188,6 +188,53 @@ CSV and JSON serializers for the cached `GroupComparisonResult` list.
 CSV is one row per variable; JSON is the full tree via
 `dataclasses.asdict`. `_default` handles numpy scalars and sets.
 
+### `app/annotations.py`
+Model of the annotation file: dataclasses `Category`, `FigureSpec`,
+`Annotation`, `Section` (recursive) and `AnnotationDocument`.
+`document_from_dict` parses leniently (unknown keys ignored, like
+`config.py`) then `validate` checks ids, cross references, statuses,
+plot labels (`constants.PLOT_LABELS`) and zoom ranges, raising
+`AnnotationError` with every message. `match_annotations` resolves exact
+paths and `fnmatch` globs; `check_against_results` lists dead patterns and
+differing variables without annotation. Pure edit helpers
+(`upsert_annotation`, `move_section`, …) mutate a document in place.
+
+`AnnotationStore` is the **process-wide** owner of the file (held on
+`AppContext`, shared by every tab, unlike `SessionData`). All writes go
+through `apply(edit, base_revision, force)`: the edit runs on a deep
+copy, is validated, written to `file.tmp` then `os.replace`d (previous
+content kept as `file.bak`), and `revision` is bumped. A stale
+`base_revision` (another tab saved) or a different sha256 on disk
+(manual edit) raises `ConflictError` unless `force` is set.
+
+### `app/annotated_report.py`
+Builds the standalone report from an `AnnotationDocument` and a
+`ReportInputs` bundle (datasets, results, global mask). Figures reuse
+`data_loading.build_data_source` (session-free) + `plots.build_all_figures`;
+a figure's `zoom` restricts the `DataSource` with `apply_flag_filter` so
+statistics match the window. Figures are embedded as JSON in
+`<script type="application/json">` and drawn lazily by an
+IntersectionObserver (and purged far off-screen to bound WebGL
+contexts). User text is escaped or rendered by markdown-it with raw HTML
+disabled. `html_to_pdf` prints the page with Playwright/Chromium.
+
+### `app/report_cli.py`
+`ncjuxta-report` entry point: config merge (`config.apply_config_defaults`,
+shared with `app.py`), scan, coverage warnings, HTML/PDF output.
+
+### `app/callbacks/annotation_views.py` / `annotations_editor.py`
+Builders (badges, detail-view panel, annotation/section/document forms,
+editor page — view `annotations`) and their callbacks. Saves return the
+new store revision into the global `ann-revision` store; the outline,
+the detail panel and the forms' own base revisions follow it, so only
+saves from *another* tab or the disk are reported as conflicts.
+`_registration.register_callbacks` registers these callbacks last
+(import inside the function to avoid a cycle).
+`row_editor.py` provides the small editable tables of the editor
+(figures, compared-data rows, categories) from plain `dcc.Input` /
+`dcc.Dropdown` cells with pattern-matching ids, in place of the
+deprecated `dash_table.DataTable`.
+
 ### `app/utils.py`
 Tiny helpers (`count_diffs`, `count_diffs_recursive`, group navigation
 utilities).

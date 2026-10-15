@@ -12,10 +12,15 @@ dependencies = [
     "netCDF4",
     "numpy",
     "numexpr",
+    "markdown-it-py",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest", "pre-commit"]
+pdf = ["playwright"]
+
+[project.scripts]
+ncjuxta-report = "app.report_cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]

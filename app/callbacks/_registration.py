@@ -169,6 +169,7 @@ def _apply_expression_no_nav(state: SessionState, raw: str):
         state.group_results,
         state.filter_info,
         mask=state.active_mask,
+        tolerance_steps=state.tolerance_steps,
     )
     msg = (
         f"Filter active: {masked:,}/{total:,} points masked "
@@ -230,7 +231,9 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         State("zoom-range", "data"),
     )
     def render_main_content(view, group_path, varpath, zoom_range):
-        if view == "detail" and varpath:
+        if view == "annotations":
+            state.current_view = "annotations"
+        elif view == "detail" and varpath:
             state.current_view = "detail"
             state.current_varpath = varpath
         else:
@@ -661,7 +664,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         new_sig_diff.update_layout(
             template="seaborn",
             xaxis_title="Index",
-            yaxis_title="Source - Target",
+            yaxis_title="Target - Source",
             yaxis_fixedrange=False,
             height=400,
             margin={"l": 60, "r": 20, "t": 10, "b": 40},
@@ -1292,7 +1295,7 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                 fig.update_layout(
                     template="seaborn",
                     xaxis_title="Index",
-                    yaxis_title="Source - Target",
+                    yaxis_title="Target - Source",
                     yaxis_fixedrange=False,
                     height=400,
                     margin={"l": 60, "r": 20, "t": 10, "b": 40},
@@ -1604,7 +1607,9 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         state.active_expression = None
         state.filter_info = None
         state.clear_variable_cache()
-        state.group_results = scan_all_groups(state.src_ds, state.tgt_ds)
+        state.group_results = scan_all_groups(
+            state.src_ds, state.tgt_ds, tolerance_steps=state.tolerance_steps
+        )
         bc, content = render_current_view(state)
         return (
             [],
@@ -1981,6 +1986,10 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
         prevent_initial_call=True,
     )
 
+    from .annotations_editor import register_annotation_callbacks
+
+    register_annotation_callbacks(app, state)
+
     # ── Restore state from URL on initial load ────────────────────
 
     @app.callback(
@@ -2043,7 +2052,9 @@ def register_callbacks(app: dash.Dash, state: SessionState) -> None:
                 status_msg, status_style = result
 
         # Set navigation state
-        if view == "detail" and varpath:
+        if view == "annotations":
+            state.current_view = "annotations"
+        elif view == "detail" and varpath:
             state.current_view = "detail"
             state.current_varpath = varpath
         else:

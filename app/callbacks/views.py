@@ -27,6 +27,14 @@ from ..utils import (
     find_group_result,
     navigate_to_group,
 )
+from .annotation_views import (
+    annotation_dots,
+    build_annotation_overview,
+    build_annotation_panel,
+    build_annotations_view,
+    coverage,
+    get_store,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -114,6 +122,8 @@ def build_global_summary(state):
 
     # Sort by max absolute error descending
     problem_vars.sort(key=lambda v: abs(float(v.stats.max_diff)), reverse=True)
+    store = get_store(state)
+    cov = coverage(state)
 
     content: list[Any] = []
     content.append(
@@ -167,6 +177,16 @@ def build_global_summary(state):
                     html.Td(f"{abs(float(v.stats.max_diff)):.6g}", style=cell_style),
                     html.Td(f"{abs(float(v.stats.mean_diff)):.6g}", style=cell_style),
                     html.Td(f"{float(v.stats.std_diff):.6g}", style=cell_style),
+                    *(
+                        [
+                            html.Td(
+                                annotation_dots(store.document, cov.get(v.varpath, [])),
+                                style={**cell_style, "backgroundColor": "white"},
+                            )
+                        ]
+                        if store is not None
+                        else []
+                    ),
                 ],
                 id={"type": "summary-var-row", "path": v.varpath},
                 n_clicks=0,
@@ -204,6 +224,19 @@ def build_global_summary(state):
                                 "Std",
                                 style={"padding": "8px 12px", "textAlign": "left"},
                             ),
+                            *(
+                                [
+                                    html.Th(
+                                        "Annotations",
+                                        style={
+                                            "padding": "8px 12px",
+                                            "textAlign": "left",
+                                        },
+                                    )
+                                ]
+                                if store is not None
+                                else []
+                            ),
                         ],
                         style={"backgroundColor": "rgb(76,114,176)", "color": "white"},
                     )
@@ -227,6 +260,12 @@ def build_group_browser(state, group_path):
     """Build group browser view content."""
     gr = find_group_result(state, group_path)
     content: list[Any] = []
+    store = get_store(state)
+    cov = coverage(state)
+    if group_path == "/":
+        overview = build_annotation_overview(state)
+        if overview is not None:
+            content.append(overview)
 
     # At root: show a toggle between Summary and Browse views
     if group_path == "/":
@@ -554,6 +593,18 @@ def build_group_browser(state, group_path):
                                 "textOverflow": "ellipsis",
                             },
                         ),
+                        *(
+                            [
+                                html.Td(
+                                    annotation_dots(
+                                        store.document, cov.get(v.varpath, [])
+                                    ),
+                                    style={**cell_style, "backgroundColor": "white"},
+                                )
+                            ]
+                            if store is not None
+                            else []
+                        ),
                     ],
                     id={"type": "var-row", "path": v.varpath},
                     n_clicks=0,
@@ -602,6 +653,19 @@ def build_group_browser(state, group_path):
                                             "padding": "8px 12px",
                                             "textAlign": "left",
                                         },
+                                    ),
+                                    *(
+                                        [
+                                            html.Th(
+                                                "Annotations",
+                                                style={
+                                                    "padding": "8px 12px",
+                                                    "textAlign": "left",
+                                                },
+                                            )
+                                        ]
+                                        if store is not None
+                                        else []
                                     ),
                                 ],
                                 style={
@@ -870,7 +934,7 @@ def build_filtered_map(data_source, zoom_range):
     return fig
 
 
-def build_detail_view(state, varpath, zoom_range=None):
+def build_detail_view(state, varpath, zoom_range=None, visible_plots=None):
     """Build the detail view for a variable."""
     # Find the long name from comparison results
     long_name = varpath
@@ -1015,6 +1079,10 @@ def build_detail_view(state, varpath, zoom_range=None):
             style={"marginBottom": "12px"},
         ),
     ]
+
+    panel = build_annotation_panel(state, varpath)
+    if panel is not None:
+        content.append(panel)
 
     # Outlier detection
     d = data_source.source_data
@@ -1186,7 +1254,9 @@ def build_detail_view(state, varpath, zoom_range=None):
     visibility_pills = dcc.Checklist(
         id="plot-visibility",
         options=[{"label": f" {lbl}", "value": lbl} for lbl in plot_labels],
-        value=["Signal Comparison"],
+        value=[lbl for lbl in visible_plots if lbl in plot_labels]
+        if visible_plots
+        else ["Signal Comparison"],
         inline=True,
         style={
             "fontSize": "12px",
@@ -1311,7 +1381,7 @@ def build_detail_view(state, varpath, zoom_range=None):
                 ]
 
     # Plot graphs
-    _default_visible = {"Signal Comparison"}
+    _default_visible = set(visible_plots or ["Signal Comparison"])
     for label, fig in plot_configs:
         visible = label in _default_visible
         content.append(
@@ -1387,12 +1457,14 @@ def build_detail_view(state, varpath, zoom_range=None):
     return content
 
 
-def render_current_view(state, zoom_range=None):
+def render_current_view(state, zoom_range=None, visible_plots=None):
     """Render the current view (group or detail) based on state.
 
     Returns:
         Tuple of (breadcrumb_items, main_content_children).
     """
+    if state.current_view == "annotations":
+        return build_breadcrumb("/"), build_annotations_view(state)
     if state.current_view == "detail" and state.current_varpath:
         varpath = state.current_varpath
         parent = (
@@ -1401,7 +1473,9 @@ def render_current_view(state, zoom_range=None):
             else "/"
         )
         breadcrumb = build_breadcrumb(parent)
-        detail = build_detail_view(state, varpath, zoom_range=zoom_range)
+        detail = build_detail_view(
+            state, varpath, zoom_range=zoom_range, visible_plots=visible_plots
+        )
         return breadcrumb, detail
     else:
         group_path = state.current_group_path or "/"

@@ -154,7 +154,7 @@ def fig_signal_difference(
     fig.update_layout(
         template=_TEMPLATE,
         xaxis_title="Index",
-        yaxis_title="Source - Target",
+        yaxis_title="Target - Source",
         yaxis_fixedrange=False,
         height=400,
         margin={"l": 60, "r": 20, "t": 10, "b": 40},

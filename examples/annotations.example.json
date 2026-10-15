@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "language": "fr",
+  "title": "Validation de la chaîne LR c3po contre le PDAP sur Sentinel-6 transcodé",
+  "subtitle": "Récapitulatif des différences observées et de leurs causes",
+  "date": "2026-10-12",
+  "authors": ["Équipe CRISTAL-PGF"],
+  "source_label": "PDAP",
+  "target_label": "c3po",
+  "datasets": [
+    {"label": "Passe", "value": "Sentinel-6A, cycle 188, passe 1, 15/12/2025, 21:35:45 à 22:31:58"},
+    {"label": "Taille", "value": "2 003 mesures à 1 Hz, 40 060 à 20 Hz"}
+  ],
+  "categories": [
+    {"id": "tds", "label": "À traiter côté TDS", "color": "#c62828", "description": "Données d'entrée ou produit de référence à corriger."},
+    {"id": "expected", "label": "Différence attendue", "color": "#1565c0", "description": "Écart de spécification ou de méthode connu."},
+    {"id": "fixed", "label": "Défaut corrigé dans c3po", "color": "#2e7d32"},
+    {"id": "spec", "label": "Constat EUMETSAT", "color": "#6a1b9a"}
+  ],
+  "sections": [
+    {
+      "id": "objet",
+      "title": "Objet",
+      "body": "Le TDS LR est produit en passant des données Sentinel-6 dans la chaîne PDAP, puis en convertissant le produit L2 au format CRISTAL. Nous avons traité la même passe avec la chaîne L2 CRISTAL (c3po) et comparé les deux produits variable par variable.\n\n**Périmètre :** bande Ku seulement. Un écart est compté quand deux valeurs diffèrent de plus d'un pas de stockage."
+    },
+    {
+      "id": "resume",
+      "title": "Résumé",
+      "auto": "summary_counts",
+      "body": "- **Le haut du graphe concorde** : datation, orbite, altitude, surface, géoïde, MSS, marées.\n- **Le retracker MLE4 concorde** à 3 points près.\n- **Deux défauts ont été trouvés et corrigés dans c3po** grâce à cette comparaison."
+    },
+    {
+      "id": "tds",
+      "title": "Points à traiter côté TDS",
+      "body": "Ce sont les points où les données d'entrée transcodées ou le produit de référence posent problème.",
+      "subsections": [
+        {"id": "anomalies-pdap", "title": "Anomalies du produit du PDAP", "annotations": ["angle-coast", "swh-mlut"]}
+      ]
+    },
+    {
+      "id": "attendues",
+      "title": "Différences attendues",
+      "body": "Ces écarts viennent d'une différence entre les spécifications CRISTAL et Sentinel-6, ou d'une différence de méthode connue.",
+      "subsections": [
+        {"id": "methode", "title": "Différences de méthode", "annotations": ["fes", "sig0-20hz"]},
+        {"id": "retracker", "title": "Retracker numérique", "annotations": ["range-sign"]}
+      ]
+    },
+    {"id": "accord", "title": "État de l'accord", "auto": "agreement_table", "body": "« Identique » veut dire : aucune mesure en écart de plus d'un pas de stockage."},
+    {"id": "non-annote", "title": "Écarts restant à analyser", "auto": "unannotated"},
+    {
+      "id": "ouvert",
+      "title": "Ce qui reste ouvert",
+      "body": "- **Réponses d'EUMETSAT** sur le signe du retard d'atténuateur (SF-C48).\n- **Une seule passe** a été comparée."
+    }
+  ],
+  "annotations": [
+    {
+      "id": "angle-coast",
+      "title": "angle_approach_to_coast interpolé comme un nombre ordinaire",
+      "category": "tds",
+      "status": "open",
+      "variables": ["/data_01/angle_approach_to_coast"],
+      "text": "L'angle est interpolé comme un nombre ordinaire : entre +179° et −179° le résultat est 0°. La spécification demande une interpolation par vecteurs unitaires.",
+      "effect": "La référence vaut environ 0° là où la bonne valeur est ± 180°.",
+      "magnitude": "≈ 3,4 % des mesures à 1 Hz",
+      "cause": "Anomalie du logiciel Sentinel-6",
+      "figures": [
+        {
+          "variable": "/data_01/angle_approach_to_coast",
+          "plots": ["Signal Comparison", "Signal Difference", "Geographical Position"],
+          "caption": "Les écarts de ±180° apparaissent à chaque passage de la discontinuité."
+        }
+      ]
+    },
+    {
+      "id": "swh-mlut",
+      "title": "Correction instrumentale SWH incohérente sur deux mesures",
+      "category": "tds",
+      "status": "confirmed",
+      "variables": ["/data_01/swh_ocean"],
+      "text": "Sur deux mesures 1 Hz consécutives (n° 1812 et 1813), la correction ne vaut pas la table MLUT au SWH de la mesure.",
+      "magnitude": "2 mesures à 1 Hz",
+      "cause": "Non trouvée",
+      "figures": [
+        {
+          "variable": "/data_01/swh_ocean",
+          "plots": ["Signal Comparison", "Signal Difference"],
+          "zoom": [1790, 1835]
+        }
+      ]
+    },
+    {
+      "id": "fes",
+      "title": "Marées océaniques : version plus récente de la bibliothèque FES",
+      "category": "expected",
+      "status": "resolved",
+      "variables": ["/data_01/ocean_tide_*"],
+      "text": "c3po utilise une version plus récente de la bibliothèque FES, déjà validée.",
+      "magnitude": "0,1 à 0,4 mm",
+      "cause": "Version de bibliothèque",
+      "figures": [
+        {
+          "variable": "/data_01/ocean_tide_sol1",
+          "plots": ["Histogram", "Statistics"],
+          "expression": "${/data_01/surface_classification_flag} == 0",
+          "caption": "Restreint à l'océan ouvert."
+        }
+      ]
+    },
+    {
+      "id": "sig0-20hz",
+      "title": "sig0_ocean : correction atmosphérique calculée à 20 Hz",
+      "category": "expected",
+      "status": "resolved",
+      "variables": ["/data_20/ku/sig0_ocean"],
+      "text": "CRISTAL calcule à 20 Hz ce que Sentinel-6 interpole depuis le 1 Hz.",
+      "magnitude": "≈ 0,8 % des mesures, jusqu'à 0,13 dB",
+      "refs": ["L2 PGS v1F §5.3.2.4"],
+      "figures": [{"variable": "/data_20/ku/sig0_ocean", "plots": ["Scatter Plot", "Histogram"]}]
+    },
+    {
+      "id": "range-sign",
+      "title": "Signe du retard d'atténuateur dans l'époque",
+      "category": "spec",
+      "status": "open",
+      "variables": ["/data_20/ku/range_ocean"],
+      "text": "Le PDAP applique le signe *plus* (spécification Sentinel-6), c3po le signe *moins* (spécification CRISTAL v1F).",
+      "effect": "Biais de 3,9 mm sur `range_ocean`, soit deux fois le retard.",
+      "magnitude": "3,9 mm",
+      "cause": "Spécification",
+      "refs": ["SF-C48"],
+      "figures": [
+        {"variable": "/data_20/ku/range_ocean", "plots": ["Signal Difference", "Histogram", "Statistics"], "zoom": [10000, 12000]}
+      ]
+    }
+  ]
+}

@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy
 
+from .constants import DEFAULT_TOLERANCE_STEPS
+
 if TYPE_CHECKING:
     import netCDF4
 
@@ -62,6 +64,8 @@ class Stats:
         max_diff: The maximum difference.
         mean_diff: The mean difference.
         std_diff: The standard deviation of the difference.
+        n_valid: Number of elements defined in both files.
+        n_exceed: Number of elements whose difference exceeds the tolerance.
 
     """
 
@@ -69,15 +73,30 @@ class Stats:
     max_diff: numpy.float64
     mean_diff: numpy.float64
     std_diff: numpy.float64
+    n_valid: int = 0
+    n_exceed: int = 0
 
     @staticmethod
-    def from_array(array: numpy.ndarray) -> Stats:
-        """Create a Stats object from a numpy array."""
+    def from_array(array: numpy.ndarray, atol: float | None = None) -> Stats:
+        """Create a Stats object from a numpy array of absolute differences.
+
+        When ``atol`` is given, ``n_exceed`` counts the elements strictly
+        above it; NaN and masked elements are never counted.
+        """
+        valid = ~numpy.ma.getmaskarray(array)
+        if numpy.issubdtype(array.dtype, numpy.floating):
+            valid &= ~numpy.isnan(numpy.ma.getdata(array))
+        n_exceed = 0
+        if atol is not None:
+            values = numpy.ma.getdata(array)[valid]
+            n_exceed = int(numpy.count_nonzero(values > atol))
         return Stats(
             min_diff=numpy.min(array),
             max_diff=numpy.max(array),
             mean_diff=numpy.mean(array).astype(numpy.float64),
             std_diff=numpy.std(array).astype(numpy.float64),
+            n_valid=int(numpy.count_nonzero(valid)),
+            n_exceed=n_exceed,
         )
 
     def __str__(self) -> str:
@@ -257,6 +276,7 @@ def compare_variable(
     varname: str,
     long_name: str,
     mask: numpy.ndarray | None = None,
+    tolerance_steps: float = DEFAULT_TOLERANCE_STEPS,
 ) -> VariableComparisonResult:
     """Compare a single variable between source and target.
 
@@ -267,6 +287,8 @@ def compare_variable(
         varname: Short variable name.
         long_name: Human-readable name.
         mask: Optional boolean mask to apply before comparison.
+        tolerance_steps: Tolerance in storage steps: differences up to
+            ``tolerance_steps * scale_factor`` are ``almost_equal``.
 
     Returns:
         Comparison result for this variable.
@@ -330,9 +352,9 @@ def compare_variable(
         )
 
     # Values are different - compute stats and check tolerance
-    tol = get_scale_factor(src_var, tgt_var, varpath)
+    tol = tolerance_steps * get_scale_factor(src_var, tgt_var, varpath)
     diff = numpy.abs(src_val - tgt_val)
-    stats = Stats.from_array(diff)
+    stats = Stats.from_array(diff, atol=tol)
 
     status: Literal["almost_equal", "different"]
     if numpy.allclose(src_val, tgt_val, rtol=0, atol=tol, equal_nan=True):
@@ -357,6 +379,7 @@ def compare_group(
     target: netCDF4.Dataset,
     filter_info: FilterInfo | None = None,
     mask: numpy.ndarray | None = None,
+    tolerance_steps: float = DEFAULT_TOLERANCE_STEPS,
 ) -> GroupComparisonResult:
     """Compare a single group (attributes + variables, non-recursive).
 
@@ -365,6 +388,7 @@ def compare_group(
         target: Target NetCDF group.
         filter_info: Optional filter information.
         mask: Optional boolean mask for expression filtering.
+        tolerance_steps: Tolerance in storage steps (see ``compare_variable``).
 
     Returns:
         Comparison result for this group.
@@ -411,6 +435,7 @@ def compare_group(
             varname,
             long_name,
             mask=mask,
+            tolerance_steps=tolerance_steps,
         )
         variables.append(result)
 
@@ -453,6 +478,7 @@ def scan_all_groups(
     target: netCDF4.Dataset,
     filter_info: FilterInfo | None = None,
     mask: numpy.ndarray | None = None,
+    tolerance_steps: float = DEFAULT_TOLERANCE_STEPS,
 ) -> list[GroupComparisonResult]:
     """Recursively scan all groups and compare them.
 
@@ -461,6 +487,7 @@ def scan_all_groups(
         target: Target NetCDF dataset.
         filter_info: Optional filter information.
         mask: Optional boolean mask for expression filtering.
+        tolerance_steps: Tolerance in storage steps (see ``compare_variable``).
 
     Returns:
         List of group comparison results.
@@ -470,7 +497,9 @@ def scan_all_groups(
 
     def _scan(src_grp: netCDF4.Dataset, tgt_grp: netCDF4.Dataset) -> None:
         LOGGER.info("Comparing group: %s", src_grp.path)
-        result = compare_group(src_grp, tgt_grp, filter_info, mask=mask)
+        result = compare_group(
+            src_grp, tgt_grp, filter_info, mask=mask, tolerance_steps=tolerance_steps
+        )
         results.append(result)
         for grp_name in src_grp.groups:
             if grp_name in tgt_grp.groups:
@@ -486,6 +515,7 @@ def rescan_affected_groups(
     previous_results: list[GroupComparisonResult],
     filter_info: FilterInfo | None = None,
     mask: numpy.ndarray | None = None,
+    tolerance_steps: float = DEFAULT_TOLERANCE_STEPS,
 ) -> list[GroupComparisonResult]:
     """Re-scan only groups affected by the filter, reuse others.
 
@@ -499,13 +529,16 @@ def rescan_affected_groups(
         previous_results: Results from a prior scan_all_groups call.
         filter_info: Optional filter information.
         mask: Optional boolean mask for expression filtering.
+        tolerance_steps: Tolerance in storage steps (see ``compare_variable``).
 
     Returns:
         Updated list of group comparison results.
 
     """
     if mask is None or not previous_results:
-        return scan_all_groups(source, target, filter_info, mask=mask)
+        return scan_all_groups(
+            source, target, filter_info, mask=mask, tolerance_steps=tolerance_steps
+        )
 
     affected_groups: set[str] = set()
     if filter_info is not None:
@@ -528,7 +561,13 @@ def rescan_affected_groups(
 
         if is_affected:
             LOGGER.info("Recomparing affected group: %s", group_path)
-            result = compare_group(src_grp, tgt_grp, filter_info, mask=mask)
+            result = compare_group(
+                src_grp,
+                tgt_grp,
+                filter_info,
+                mask=mask,
+                tolerance_steps=tolerance_steps,
+            )
         elif group_path in prev_by_path:
             LOGGER.info("Reusing previous result for group: %s", group_path)
             prev = prev_by_path[group_path]
@@ -544,7 +583,13 @@ def rescan_affected_groups(
             )
         else:
             LOGGER.info("Comparing new group: %s", group_path)
-            result = compare_group(src_grp, tgt_grp, filter_info, mask=mask)
+            result = compare_group(
+                src_grp,
+                tgt_grp,
+                filter_info,
+                mask=mask,
+                tolerance_steps=tolerance_steps,
+            )
 
         results.append(result)
         for grp_name in src_grp.groups:

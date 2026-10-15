@@ -62,3 +62,35 @@ mystery_setting = "ignored"
     )
     cfg = load_config(cfg_path)
     assert cfg.server.port == 5000
+
+
+def test_annotations_section_and_defaults(tmp_path):
+    import argparse
+
+    from app.config import apply_config_defaults, load_config
+
+    path = tmp_path / "cfg.toml"
+    path.write_text(
+        '[paths]\nsource = "a.nc"\n[annotations]\nfile = "ann.json"\nreadonly = true\n'
+        "[comparison]\ntolerance_steps = 2.0\n"
+    )
+    config = load_config(path)
+    assert config.annotations.file == "ann.json"
+    assert config.annotations.readonly is True
+    args = argparse.Namespace(
+        source=None,
+        annotations=None,
+        annotations_readonly=False,
+        expr="x",
+        tolerance_steps=None,
+    )
+    apply_config_defaults(args, config)
+    assert args.source == "a.nc"
+    assert args.annotations == "ann.json"
+    assert args.annotations_readonly is True
+    assert args.expr == "x"
+    assert not hasattr(args, "port")
+    assert args.tolerance_steps == 2.0
+    explicit_zero = argparse.Namespace(tolerance_steps=0.0)
+    apply_config_defaults(explicit_zero, config)
+    assert explicit_zero.tolerance_steps == 0.0

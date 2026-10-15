@@ -7,11 +7,16 @@ merge by passing the config's values as argparse defaults.
 
 from __future__ import annotations
 
+import argparse
 import dataclasses
 import pathlib
 import tomllib
 
-from app.constants import MAX_DISPLAY_POINTS, MAX_VARIABLE_CACHE_SIZE
+from app.constants import (
+    DEFAULT_TOLERANCE_STEPS,
+    MAX_DISPLAY_POINTS,
+    MAX_VARIABLE_CACHE_SIZE,
+)
 
 
 @dataclasses.dataclass
@@ -28,6 +33,13 @@ class FilterConfig:
 
     expression: str | None = None
     flags: list[str] = dataclasses.field(default_factory=list)
+
+
+@dataclasses.dataclass
+class ComparisonConfig:
+    """Settings of the variable comparison."""
+
+    tolerance_steps: float = DEFAULT_TOLERANCE_STEPS
 
 
 @dataclasses.dataclass
@@ -54,23 +66,37 @@ class LoggingConfig:
 
 
 @dataclasses.dataclass
+class AnnotationsConfig:
+    """Annotation file used by the app and the report generator."""
+
+    file: str | None = None
+    readonly: bool = False
+
+
+@dataclasses.dataclass
 class AppConfig:
     """Top-level application configuration loaded from TOML.
 
     Attributes:
         paths: Source and target NetCDF file locations.
         filter: Initial expression and flag filters.
+        comparison: Comparison tolerance.
         server: Dash server settings.
         cache: Cache and display limits.
         logging: Logging verbosity settings.
+        annotations: Annotation file settings.
 
     """
 
     paths: PathsConfig = dataclasses.field(default_factory=PathsConfig)
     filter: FilterConfig = dataclasses.field(default_factory=FilterConfig)
+    comparison: ComparisonConfig = dataclasses.field(default_factory=ComparisonConfig)
     server: ServerConfig = dataclasses.field(default_factory=ServerConfig)
     cache: CacheConfig = dataclasses.field(default_factory=CacheConfig)
     logging: LoggingConfig = dataclasses.field(default_factory=LoggingConfig)
+    annotations: AnnotationsConfig = dataclasses.field(
+        default_factory=AnnotationsConfig
+    )
 
 
 def load_config(path: str | pathlib.Path) -> AppConfig:
@@ -92,7 +118,34 @@ def load_config(path: str | pathlib.Path) -> AppConfig:
     return AppConfig(
         paths=_section("paths", PathsConfig),  # type: ignore[arg-type]
         filter=_section("filter", FilterConfig),  # type: ignore[arg-type]
+        comparison=_section("comparison", ComparisonConfig),  # type: ignore[arg-type]
         server=_section("server", ServerConfig),  # type: ignore[arg-type]
         cache=_section("cache", CacheConfig),  # type: ignore[arg-type]
         logging=_section("logging", LoggingConfig),  # type: ignore[arg-type]
+        annotations=_section("annotations", AnnotationsConfig),  # type: ignore[arg-type]
     )
+
+
+def apply_config_defaults(args: argparse.Namespace, config: AppConfig) -> None:
+    """Fill argparse values left unset from the TOML config (CLI takes precedence).
+
+    Only the attributes present on ``args`` are considered, so the app
+    and the report generator can share this helper.
+    """
+    fallbacks = {
+        "source": config.paths.source,
+        "target": config.paths.target,
+        "expr": config.filter.expression,
+        "flag": list(config.filter.flags) or None,
+        "tolerance_steps": config.comparison.tolerance_steps,
+        "port": config.server.port,
+        "debug": config.server.debug,
+        "annotations": config.annotations.file,
+        "annotations_readonly": config.annotations.readonly,
+    }
+    for name, value in fallbacks.items():
+        if not hasattr(args, name):
+            continue
+        current = getattr(args, name)
+        if current is None or current is False or current == "" or current == []:
+            setattr(args, name, value)
