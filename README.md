@@ -178,7 +178,9 @@ annotated report. Variables without `scale_factor` are compared exactly.
 - **Main table view**: browse groups, click a group to drill in, click
   a variable marked *Different* or *Almost equal* to open its plots.
 - **Plot view**:
-  - Tick the plots you want to display from the *Visible* row.
+  - Tick the plots you want to display from the *Visible* row. The view
+    opens on *Signal Difference*: overlaid source/target curves usually
+    hide differences that are tiny compared with the signal.
   - The **⛶** button next to a plot title shows it full screen (handy for
     the geographical map); press **Esc** to exit. The annotated report has
     the same button.
