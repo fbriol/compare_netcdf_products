@@ -205,7 +205,9 @@ def cell_states(table_id: str) -> list[State]:
     return [State(pattern, "value"), State(pattern, "id")]
 
 
-def collect_rows(values: list[Any] | None, ids: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+def collect_rows(
+    values: list[Any] | None, ids: list[dict[str, Any]] | None
+) -> list[dict[str, Any]]:
     """Rebuild row dicts (in row order) from cell values and ids."""
     rows: dict[int, dict[str, Any]] = {}
     for value, cid in zip(values or [], ids or [], strict=False):
