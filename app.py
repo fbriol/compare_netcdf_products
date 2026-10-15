@@ -16,6 +16,7 @@ import pathlib
 import secrets
 
 import dash
+import flask
 import netCDF4
 
 from app.annotations import AnnotationError, AnnotationStore
@@ -29,6 +30,7 @@ from app.expression import (
 from app.flags import Flag
 from app.layout import create_layout
 from app.state import SessionState
+from app.utils import STATIC_URL, static_script
 
 LOGGER = logging.getLogger(__name__)
 
@@ -201,7 +203,15 @@ def main() -> None:
             __name__,
             suppress_callback_exceptions=True,
             title="NetCDF Comparison",
+            external_scripts=[STATIC_URL + "fullscreen.js"],
         )
+
+        @dash_app.server.route(STATIC_URL + "<name>")
+        def _static_script(name: str) -> flask.Response:
+            if name != "fullscreen.js":
+                flask.abort(404)
+            return flask.Response(static_script(name), mimetype="text/javascript")
+
         # Flask session (backing per-tab SessionData) requires a secret key.
         # Respect an operator-supplied key if present; otherwise generate
         # one per-process so cookies survive until restart.

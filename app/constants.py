@@ -49,6 +49,11 @@ PLOT_LABELS = (
     "Statistics",
 )
 
+#: Plots shown when a variable view opens. The difference is shown first:
+#: superimposed source/target curves usually hide differences that are
+#: tiny compared with the signal.
+DEFAULT_VISIBLE_PLOTS = ("Signal Difference",)
+
 #: Default tolerance, in storage steps (``scale_factor``), under which a
 #: difference is classified ``almost_equal``. One step absorbs a rounding
 #: of the last stored unit; the extra half step absorbs the floating-point

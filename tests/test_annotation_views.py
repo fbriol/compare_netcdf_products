@@ -71,6 +71,7 @@ def test_detail_view_contains_panel(annotated_state) -> None:
     _, content = render_current_view(annotated_state, visible_plots=["Histogram"])
     text = str(content)
     assert "annotation-panel" in text and "Speed differs" in text
+    assert "ncj-fullscreen-btn" in text
     assert "ann-new-for-var" in text
     panel = build_annotation_panel(annotated_state, "/data_01/altitude")
     assert "No annotation covers" in str(panel)
@@ -123,3 +124,33 @@ def test_collect_rows_orders_by_row() -> None:
     ]
     assert collect_rows(["x", "y", "z"], ids) == [{"a": "y", "b": "z"}, {"a": "x"}]
     assert collect_rows(None, None) == []
+
+
+def _find(component, cid):
+    if getattr(component, "id", None) == cid:
+        return component
+    children = getattr(component, "children", None)
+    if children is None:
+        return None
+    for child in children if isinstance(children, (list, tuple)) else [children]:
+        found = _find(child, cid)
+        if found is not None:
+            return found
+    return None
+
+
+def test_detail_view_shows_difference_by_default(annotated_state) -> None:
+    annotated_state.current_view = "detail"
+    annotated_state.current_varpath = "/data_01/speed"
+    _, content = render_current_view(annotated_state)
+    found = (_find(x, "plot-visibility") for x in content)
+    pills = next(c for c in found if c is not None)
+    assert pills.value == ["Signal Difference"]
+    containers = {
+        c.id["label"]: c.style
+        for c in content
+        if isinstance(getattr(c, "id", None), dict)
+        and c.id.get("type") == "plot-container"
+    }
+    assert containers["Signal Comparison"] == {"display": "none"}
+    assert containers["Signal Difference"] != {"display": "none"}

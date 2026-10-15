@@ -31,6 +31,7 @@ from .constants import (
 from .data_loading import build_data_source
 from .expression import create_expression_mask
 from .plots import build_all_figures
+from .utils import static_script
 
 if TYPE_CHECKING:
     import netCDF4
@@ -86,6 +87,7 @@ _TEXTS: dict[str, dict[str, str]] = {
         "figure_error": "Cannot render figure for {variable}: {error}",
         "zoom": "zoom",
         "loading": "Figure rendered when scrolled into view.",
+        "fullscreen": "Full screen (Esc to exit)",
         "open": "open",
         "confirmed": "confirmed",
         "resolved": "resolved",
@@ -136,6 +138,7 @@ _TEXTS: dict[str, dict[str, str]] = {
         "figure_error": "Impossible de tracer {variable} : {error}",
         "zoom": "zoom",
         "loading": "Figure affichée au défilement.",
+        "fullscreen": "Plein écran (Échap pour quitter)",
         "open": "ouvert",
         "confirmed": "confirmé",
         "resolved": "résolu",
@@ -474,7 +477,12 @@ class _Builder:
                 + "</p>"
             )
         for fig in rendered:
-            parts.append(f'<div class="plotwrap"><h5>{_esc(fig.label)}</h5>')
+            parts.append(
+                '<div class="plotwrap ncj-plot-container"><div class="plothead">'
+                f"<h5>{_esc(fig.label)}</h5>"
+                '<button type="button" class="ncj-fullscreen-btn" '
+                f'title="{_esc(self.t["fullscreen"])}">\u26f6</button></div>'
+            )
             idx = len(self.figure_payloads)
             self.figure_payloads.append(fig.payload)
             self.has_plotly = True
@@ -746,7 +754,8 @@ class _Builder:
             f"<title>{_esc(doc.title or 'Comparison report')}</title>"
             f"<style>{_CSS}</style>{head_script}</head><body>"
             f"{self.sidebar()}<main>{''.join(body)}</main>"
-            f"{payloads}<script>{_JS}</script></body></html>"
+            f"{payloads}<script>{_JS}</script>"
+            f"<script>{static_script('fullscreen.js')}</script></body></html>"
         )
 
 
@@ -922,7 +931,12 @@ background:var(--panel);font-size:12px;color:var(--fg);text-decoration:none}
 tr.is-unannotated td:first-child{box-shadow:inset 3px 0 0 #c62828}
 .figblock{margin:16px 0;border-top:1px dashed var(--line);padding-top:8px}
 .figmeta{font-size:12px;color:var(--muted)}
-.plotwrap h5{margin:10px 0 2px;font-size:13px;color:var(--muted);font-weight:500}
+.plothead{display:flex;align-items:center;justify-content:space-between;margin:10px 0 2px}
+.plotwrap h5{margin:0;font-size:13px;color:var(--muted);font-weight:500}
+.ncj-fullscreen-btn{border:1px solid var(--line);border-radius:4px;background:#fff;
+color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:2px 7px}
+.ncj-fullscreen-btn:hover{color:var(--accent);border-color:var(--accent)}
+.ncj-plot-container:fullscreen{background:#fff;padding:12px 16px;overflow:auto}
 .plot{min-height:320px;position:relative}
 .placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
 color:var(--muted);font-size:12px;background:var(--panel)}
@@ -934,7 +948,7 @@ table.compact caption{text-align:left;font-weight:600;padding-bottom:4px;white-s
 @media (max-width:900px){body{display:block}#side{position:static;width:auto;height:auto}
 main{padding:16px}}
 @media print{#side{display:none}body{display:block}main{max-width:none;padding:0}
-.anchor,.placeholder{display:none}h2,h3,h4,h5,.annotation>summary{break-after:avoid}
+.anchor,.placeholder,.ncj-fullscreen-btn{display:none}h2,h3,h4,h5,.annotation>summary{break-after:avoid}
 .plotwrap,tr,.facts,.effect{break-inside:avoid}.table-wrap{overflow:visible}
 table.vars{width:100%;font-size:11px}table.vars td,table.vars th{padding:4px 6px}
 table.vars code{word-break:break-all}}
@@ -945,18 +959,19 @@ _JS = r"""
 (function(){
   var plots=[].slice.call(document.querySelectorAll('.plot[data-fig]'));
   var live=new Set();
-  var printing=false;
+  var keepAll=false,printing=false;
+  function printHeight(h){return Math.min(h||450,330);}
   function draw(el){
     if(live.has(el)||!window.Plotly)return;
     var fig=JSON.parse(document.getElementById('fig-'+el.dataset.fig).textContent);
     var ph=el.querySelector('.placeholder');if(ph)ph.remove();
     var layout=fig.layout||{};layout.autosize=true;delete layout.width;
-    if(printing)layout.height=Math.min(layout.height||450,330);
+    if(printing)layout.height=printHeight(layout.height);
     Plotly.newPlot(el,fig.data||[],layout,{responsive:true,displaylogo:false});
     live.add(el);
   }
   function drop(el){
-    if(printing||!live.has(el))return;
+    if(keepAll||!live.has(el))return;
     Plotly.purge(el);live.delete(el);
     var ph=document.createElement('span');ph.className='placeholder';
     ph.textContent='…';el.appendChild(ph);
@@ -969,14 +984,22 @@ _JS = r"""
     plots.forEach(function(el){near.observe(el);far.observe(el);});
   }else{plots.forEach(draw);}
   function renderAll(){
-    printing=true;
+    keepAll=true;
     document.querySelectorAll('details.annotation').forEach(function(d){d.open=true;});
     plots.forEach(draw);
   }
-  window.ncjuxtaRenderAll=renderAll;
+  function renderForPrint(){
+    if(printing)return;
+    printing=true;
+    live.forEach(function(el){
+      Plotly.relayout(el,{height:printHeight(el.layout&&el.layout.height)});
+    });
+    renderAll();
+  }
+  window.ncjuxtaRenderAll=renderForPrint;
   var all=document.getElementById('render-all');
   if(all)all.addEventListener('click',renderAll);
-  window.addEventListener('beforeprint',renderAll);
+  window.addEventListener('beforeprint',renderForPrint);
 
   var q=document.getElementById('q');
   var chips=[].slice.call(document.querySelectorAll('.chip'));

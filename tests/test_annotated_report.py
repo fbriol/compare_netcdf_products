@@ -179,3 +179,9 @@ def test_pdf(tmp_path: Path, tmp_nc_pair) -> None:
     out = tmp_path / "r.pdf"
     assert main([str(src), str(tgt), "-a", str(ann), "-o", str(out)]) == 0
     assert out.read_bytes().startswith(b"%PDF")
+
+
+def test_report_has_fullscreen_buttons(open_nc_pair) -> None:
+    page = build_report(_doc(), _inputs(open_nc_pair), plotlyjs="cdn")
+    assert page.count('class="ncj-fullscreen-btn"') == 2
+    assert "requestFullscreen" in page

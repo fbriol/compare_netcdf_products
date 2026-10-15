@@ -3,3 +3,26 @@
     transform: rotate(360deg);
   }
 }
+
+.ncj-fullscreen-btn {
+  border: 1px solid #cfd8dc;
+  border-radius: 4px;
+  background: white;
+  color: #546e7a;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 7px;
+}
+
+.ncj-fullscreen-btn:hover {
+  color: rgb(76, 114, 176);
+  border-color: rgb(76, 114, 176);
+}
+
+.ncj-plot-container:fullscreen {
+  background: white;
+  padding: 12px 16px;
+  overflow: auto;
+  margin: 0 !important;
+}

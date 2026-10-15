@@ -16,7 +16,7 @@ from dash import dcc, html
 if TYPE_CHECKING:
     pass
 
-from ..constants import STATUS_COLORS, STATUS_TEXT_COLORS
+from ..constants import DEFAULT_VISIBLE_PLOTS, STATUS_COLORS, STATUS_TEXT_COLORS
 from ..data_loading import (
     list_overlay_candidates,
     load_variable_data,
@@ -1256,7 +1256,7 @@ def build_detail_view(state, varpath, zoom_range=None, visible_plots=None):
         options=[{"label": f" {lbl}", "value": lbl} for lbl in plot_labels],
         value=[lbl for lbl in visible_plots if lbl in plot_labels]
         if visible_plots
-        else ["Signal Comparison"],
+        else list(DEFAULT_VISIBLE_PLOTS),
         inline=True,
         style={
             "fontSize": "12px",
@@ -1381,16 +1381,25 @@ def build_detail_view(state, varpath, zoom_range=None, visible_plots=None):
                 ]
 
     # Plot graphs
-    _default_visible = set(visible_plots or ["Signal Comparison"])
+    _default_visible = set(visible_plots or DEFAULT_VISIBLE_PLOTS)
     for label, fig in plot_configs:
         visible = label in _default_visible
         content.append(
             html.Div(
                 [
-                    html.H4(
-                        label,
+                    html.Div(
+                        [
+                            html.H4(label, style={"color": "#455a64", "margin": "0"}),
+                            html.Button(
+                                "\u26f6",
+                                title="Full screen (Esc to exit)",
+                                className="ncj-fullscreen-btn",
+                            ),
+                        ],
                         style={
-                            "color": "#455a64",
+                            "display": "flex",
+                            "alignItems": "center",
+                            "justifyContent": "space-between",
                             "margin": "0 0 4px 0",
                             "borderBottom": "1px solid #e0e0e0",
                             "paddingBottom": "4px",
@@ -1450,6 +1459,7 @@ def build_detail_view(state, varpath, zoom_range=None, visible_plots=None):
                     ),
                 ],
                 id={"type": "plot-container", "label": label},
+                className="ncj-plot-container",
                 style={"marginBottom": "16px"} if visible else {"display": "none"},
             )
         )
