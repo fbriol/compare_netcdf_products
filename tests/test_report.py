@@ -56,6 +56,7 @@ def test_csv_has_row_per_variable():
     assert rows[1]["varname"] == "speed"
     assert rows[1]["status"] == "different"
     assert rows[1]["mean_diff"] != ""
+    assert rows[1]["n_valid"] == "3"
 
 
 def test_json_roundtrips_as_list_of_groups():

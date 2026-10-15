@@ -24,6 +24,8 @@ _CSV_COLUMNS = (
     "max_diff",
     "mean_diff",
     "std_diff",
+    "n_valid",
+    "n_exceed",
     "message",
 )
 
@@ -53,6 +55,8 @@ def results_to_csv(results: list[GroupComparisonResult]) -> str:
                     f"{stats.max_diff}" if stats else "",
                     f"{stats.mean_diff}" if stats else "",
                     f"{stats.std_diff}" if stats else "",
+                    stats.n_valid if stats else "",
+                    stats.n_exceed if stats else "",
                     var.message,
                 ]
             )

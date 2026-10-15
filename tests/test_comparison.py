@@ -27,6 +27,16 @@ class TestStats:
         assert stats.max_diff == 4.0
         assert stats.mean_diff == pytest.approx(2.5)
         assert stats.std_diff == pytest.approx(numpy.std(arr))
+        assert stats.n_valid == arr.size
+        assert stats.n_exceed == 0
+
+    def test_from_array_counts_exceedances(self):
+        arr = numpy.ma.masked_array(
+            [0.0, 0.5, 2.0, numpy.nan, 3.0], mask=[False, False, False, False, True]
+        )
+        stats = Stats.from_array(arr, atol=1.0)
+        assert stats.n_valid == 3
+        assert stats.n_exceed == 1
 
     def test_str_format(self):
         stats = Stats(
@@ -86,6 +96,9 @@ class TestCompareVariable:
         result = compare_variable(src_var, tgt_var, "/data_01/speed", "speed", "Speed")
         assert result.status == "different"
         assert result.stats is not None
+        assert result.stats.n_valid == 10
+        assert result.stats.n_exceed == 10
+        assert result.stats is not None
         assert result.stats.max_diff > 0
 
     def test_almost_equal_variable(self, open_nc_pair):
@@ -100,7 +113,39 @@ class TestCompareVariable:
             "Temperature",
         )
         assert result.status == "almost_equal"
-        assert result.atol == pytest.approx(0.01)
+        assert result.atol == pytest.approx(0.015)
+
+    @pytest.mark.parametrize(
+        ("offset", "steps", "expected"),
+        [
+            (1, 1.5, "almost_equal"),
+            (2, 1.5, "different"),
+            (1, 0.0, "different"),
+            (2, 2.5, "almost_equal"),
+        ],
+    )
+    def test_tolerance_in_storage_steps(self, tmp_path, offset, steps, expected):
+        import netCDF4
+
+        packed = numpy.arange(12_345_670, 12_345_690, dtype="i4")
+        paths = []
+        for name, delta in (("a.nc", 0), ("b.nc", offset)):
+            path = tmp_path / name
+            with netCDF4.Dataset(path, "w") as ds:
+                ds.createDimension("x", packed.size)
+                var = ds.createVariable("lat", "i4", ("x",))
+                var.scale_factor = 1e-6
+                var.set_auto_scale(False)
+                var[:] = packed + delta
+            paths.append(path)
+        with netCDF4.Dataset(paths[0]) as a, netCDF4.Dataset(paths[1]) as b:
+            result = compare_variable(
+                a["lat"], b["lat"], "/lat", "lat", "Lat", tolerance_steps=steps
+            )
+        assert result.status == expected
+        assert result.atol == pytest.approx(steps * 1e-6)
+        assert result.stats is not None
+        assert (result.stats.n_exceed == 0) == (expected == "almost_equal")
 
     def test_with_mask(self, open_nc_pair):
         src_ds, tgt_ds = open_nc_pair

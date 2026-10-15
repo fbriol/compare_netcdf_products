@@ -24,6 +24,9 @@ variables and safe numerical expressions.
 - Outlier detection with adjustable N×σ threshold and marker size.
 - Overlay any 1-D variable on the Signal Comparison plot's secondary axis.
 - Export: standalone HTML, CSV report, JSON report.
+- Annotations: describe the analysed differences in a JSON file (edited
+  by hand or in the built-in web editor), see them next to the plots,
+  and generate an interactive HTML or PDF report for the client.
 - Optional TOML config file for reproducible runs.
 - Shareable URL state (view, group, variable, zoom, filter).
 - Per-tab / per-user session isolation: two browser tabs keep
@@ -71,6 +74,9 @@ Then open <http://localhost:5006>.
 | `--flag VAR_PATH [VAR_PATH ...]` | One or more flag variables to expose in the sidebar. The variables must carry `flag_meanings` and `flag_values` attributes. |
 | `--expr EXPRESSION` | Initial filter expression. See *Expression syntax* below. |
 | `--port N` | Port to serve on (default `5006`). |
+| `--tolerance-steps N` | Differences up to N storage steps (`N × scale_factor`) are classified *almost equal* (default `1.5`). See *Tolerance*. |
+| `--annotations FILE` | Annotation JSON file to display and edit (created if missing). See *Annotations & reports*. |
+| `--annotations-readonly` | Show the annotations without the editing controls. |
 | `--debug` | Enable Dash debug mode (auto-reload, verbose errors). |
 
 ### Environment variables
@@ -132,6 +138,9 @@ flags = [
     "/data_20/surface_classification_flag",
 ]
 
+[comparison]
+tolerance_steps = 1.5
+
 [server]
 port = 5006
 debug = false
@@ -142,7 +151,24 @@ max_display_points = 20000
 
 [logging]
 level = "INFO"
+
+[annotations]
+file = "annotations.json"
+readonly = false
 ```
+
+### Tolerance
+
+Packed variables (integer + `scale_factor`) can only differ by whole
+storage steps. Two processing chains that round the last stored unit
+differently produce one-step differences, which are not significant;
+moreover, once decoded to floating point, a one-step difference is
+sometimes slightly *above* `scale_factor` (about 40 % of the time for
+`1e-6`). A variable is therefore classified *almost equal* when every
+difference is at most `tolerance_steps × scale_factor`, 1.5 steps by
+default: one step plus margin for the decoding error. The same threshold
+counts the measurements *out of tolerance* in the CSV export and the
+annotated report. Variables without `scale_factor` are compared exactly.
 
 ### Using the interface
 
@@ -169,6 +195,91 @@ level = "INFO"
 - **Export JSON report** — the full comparison tree serialised via
   `dataclasses.asdict`.
 
+## Annotations & reports
+
+When a computed product is validated against a reference, every
+difference must be explained: some need an action on the input data,
+some are expected (specification or method changes), some revealed a
+defect that was fixed. ncjuxta keeps these explanations in an
+**annotation file** (JSON) and turns them into a report the client can
+explore on their own.
+
+### The annotation file
+
+A complete example, modelled on a real validation report, is in
+[examples/annotations.example.json](examples/annotations.example.json).
+The main blocks are:
+
+| Key | Content |
+|-----|---------|
+| `title`, `subtitle`, `date`, `authors` | Report header. |
+| `language` | `en` or `fr`: language of the report's fixed texts and number format. |
+| `source_label`, `target_label` | Names replacing *Source*/*Target* in the report and its plots (e.g. `PDAP`, `c3po`). |
+| `datasets` | `{label, value}` rows of the *compared data* table. |
+| `categories` | `{id, label, color, description}`: families of remarks (e.g. *action required*, *expected difference*). |
+| `sections` | The report outline: `{id, title, body (Markdown), annotations: [ids], auto, subsections}`. `auto` inserts generated content: `summary_counts`, `agreement_table` (every differing variable, its measurements out of tolerance and the annotations covering it) or `unannotated` (differences still to analyse). |
+| `annotations` | The remarks: `{id, title, category, status, variables, text, effect, magnitude, cause, refs, figures}`. `variables` accepts exact paths or `fnmatch` globs (`/data_20/ka/*`). `status` is `open`, `confirmed`, `resolved` or `wontfix`. |
+| `figures` | Per annotation: `{variable, plots, expression, zoom, caption}`. `plots` keeps a subset of the plot names (`Signal Comparison`, `Signal Difference`, `Scatter Plot`, `Histogram`, `Statistics`, `Geographical Position`, `Exclusive Undefined Positions`); `expression` filters the data with the usual syntax; `zoom` is an `[xmin, xmax]` index range (the statistics are restricted to it too). |
+
+Annotations not placed in any section appear under *Other annotations*.
+
+Helpers:
+
+```bash
+python -m app.annotations template ref.nc tgt.nc -o annotations.json  # one empty annotation per difference
+python -m app.annotations check annotations.json ref.nc tgt.nc       # validate + list unannotated differences
+python -m app.annotations schema > annotations.schema.json           # JSON Schema for editor autocompletion
+```
+
+### In the app
+
+```bash
+python app.py ref.nc tgt.nc --annotations annotations.json
+```
+
+- The global summary and the group tables show the annotations covering
+  each variable; a banner counts how many differing variables are annotated.
+- The variable view has an **Annotations** panel. *Show this view*
+  reproduces a figure of an annotation (filter, zoom, visible plots).
+  *Annotate this variable* opens a form prefilled with the current
+  variable, filter, zoom and visible plots; *Add current view as figure*
+  appends what you are looking at to an existing annotation.
+- The **📝 Annotations** button opens the editor: outline (sections,
+  ordering, annotations), document metadata and categories. Markdown
+  fields have a live preview; **Ctrl+S** saves.
+- Every save validates the document, writes the file atomically and keeps
+  the previous version as `annotations.json.bak`. If the file was edited
+  on disk (or saved from another tab) in the meantime, the app refuses to
+  overwrite it silently: use *Reload annotations from disk* or *Overwrite
+  anyway*.
+- *Export annotated report (HTML)* in the sidebar downloads the report
+  for the current filter.
+
+### Generating the report
+
+```bash
+ncjuxta-report ref.nc tgt.nc --annotations annotations.json -o report.html
+ncjuxta-report ref.nc tgt.nc --annotations annotations.json -o report.pdf
+```
+
+The HTML report is a single self-contained file (plotly.js embedded,
+works offline; `--plotlyjs cdn` makes it smaller): table of contents,
+category/status filters, search, sortable agreement table, and
+interactive figures drawn as they scroll into view. It prints cleanly
+from a browser.
+
+PDF output needs the optional extra, which prints the same page with
+headless Chromium:
+
+```bash
+pip install -e ".[pdf]"
+playwright install chromium
+```
+
+`--strict` makes the command exit with status 2 when a differing
+variable has no annotation (useful in CI); `--expr`, `--flag` and
+`--config` work as for the app.
+
 ## Running the tests
 
 ```bash
@@ -186,7 +297,10 @@ python -m pytest tests/ -q
 ```
 app.py              # entry point (argparse, session wiring)
 app/                # application package
-├── callbacks/      # Dash callbacks (registration + dynamic views)
+├── annotated_report.py # annotated HTML / PDF report builder
+├── annotations.py  # annotation file model, validation, on-disk store
+├── callbacks/      # Dash callbacks (registration + dynamic views,
+│                   #   annotation panel and editor)
 ├── comparison.py   # group/variable comparison logic
 ├── config.py       # TOML config loader
 ├── constants.py    # colour palette, cache sizes
@@ -196,9 +310,11 @@ app/                # application package
 ├── layout.py       # static Dash layout
 ├── plots.py        # Plotly figure factories
 ├── report.py       # CSV / JSON report serializers
+├── report_cli.py   # ncjuxta-report command
 ├── state.py        # SessionState (datasets, cache, nav state)
 └── utils.py        # small helpers
-assets/ncjuxta.css  # stylesheet auto-loaded by Dash
+assets/             # stylesheet + Ctrl+S helper, auto-loaded by Dash
+examples/           # example annotation file
 tests/              # pytest suite
 ```
 

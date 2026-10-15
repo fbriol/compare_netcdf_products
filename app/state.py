@@ -30,11 +30,12 @@ if TYPE_CHECKING:
     import netCDF4
     import numpy
 
+    from .annotations import AnnotationStore
     from .comparison import FilterInfo, GroupComparisonResult
     from .data_loading import DataSource
     from .flags import Flag
 
-from .constants import MAX_VARIABLE_CACHE_SIZE
+from .constants import DEFAULT_TOLERANCE_STEPS, MAX_VARIABLE_CACHE_SIZE
 
 LOGGER = logging.getLogger(__name__)
 
@@ -65,6 +66,8 @@ class AppContext:
     tgt_ds: netCDF4.Dataset
     flags: list[Flag] | None = None
     max_cache_size: int = MAX_VARIABLE_CACHE_SIZE
+    tolerance_steps: float = DEFAULT_TOLERANCE_STEPS
+    annotations: AnnotationStore | None = None
 
 
 @dataclasses.dataclass
@@ -167,6 +170,8 @@ class SessionState:
         tgt_ds: netCDF4.Dataset
         flags: list[Flag] | None
         max_cache_size: int
+        tolerance_steps: float
+        annotations: AnnotationStore | None
         active_mask: numpy.ndarray | None
         active_expression: str | None
         filter_info: FilterInfo | None
@@ -189,6 +194,8 @@ class SessionState:
         filter_info: FilterInfo | None = None,
         group_results: list[GroupComparisonResult] | None = None,
         max_cache_size: int = MAX_VARIABLE_CACHE_SIZE,
+        tolerance_steps: float = DEFAULT_TOLERANCE_STEPS,
+        annotations: AnnotationStore | None = None,
     ) -> None:
         ctx = AppContext(
             src_path=src_path,
@@ -197,6 +204,8 @@ class SessionState:
             tgt_ds=tgt_ds,
             flags=flags,
             max_cache_size=max_cache_size,
+            tolerance_steps=tolerance_steps,
+            annotations=annotations,
         )
         initial = SessionData(
             active_mask=active_mask,

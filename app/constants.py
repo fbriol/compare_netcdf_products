@@ -37,3 +37,20 @@ LEGEND_DATA = [
     ("Variable missing in target file", "missing_in_target"),
     ("Variable missing in source file", "missing_in_source"),
 ]
+
+#: Figure labels produced by ``plots.build_all_figures``, in display order.
+PLOT_LABELS = (
+    "Geographical Position",
+    "Signal Comparison",
+    "Signal Difference",
+    "Scatter Plot",
+    "Histogram",
+    "Exclusive Undefined Positions",
+    "Statistics",
+)
+
+#: Default tolerance, in storage steps (``scale_factor``), under which a
+#: difference is classified ``almost_equal``. One step absorbs a rounding
+#: of the last stored unit; the extra half step absorbs the floating-point
+#: error of decoding packed values.
+DEFAULT_TOLERANCE_STEPS = 1.5
